@@ -64,7 +64,7 @@ INNER JOIN public.film_category AS film_category
     ON film.film_id = film_category.film_id
 INNER JOIN public.category AS category
     ON film_category.category_id = category.category_id
-WHERE category.name = 'Animation'
+WHERE LOWER(category.name) = 'animation'
   AND film.release_year BETWEEN 2017 AND 2019
   AND film.rental_rate > 1
 ORDER BY film.title ASC;
@@ -86,7 +86,7 @@ WHERE film.film_id IN (
     FROM public.film_category AS film_category
     INNER JOIN public.category AS category
         ON film_category.category_id = category.category_id
-    WHERE category.name = 'Animation'
+    WHERE LOWER(category.name) = 'animation'
 )
   AND film.release_year BETWEEN 2017 AND 2019
   AND film.rental_rate > 1
@@ -104,7 +104,7 @@ WITH animation_films AS (
     FROM public.film_category AS film_category
     INNER JOIN public.category AS category
         ON film_category.category_id = category.category_id
-    WHERE category.name = 'Animation'
+    WHERE LOWER(category.name) = 'animation'
 )
 SELECT
     film.title,
@@ -176,7 +176,7 @@ JOIN behavior:
 -- ---------------------------------------------------------
 SELECT
     CASE
-        WHEN address.address2 IS NULL OR address.address2 = '' THEN address.address
+        WHEN address.address2 IS NULL OR LOWER(address.address2) = '' THEN address.address
         ELSE address.address || ', ' || address.address2
     END AS store_address,
     SUM(payment.amount) AS revenue
@@ -192,7 +192,7 @@ INNER JOIN public.payment AS payment
 WHERE payment.payment_date >= DATE '2017-04-01'
 GROUP BY
     CASE
-        WHEN address.address2 IS NULL OR address.address2 = '' THEN address.address
+        WHEN address.address2 IS NULL OR LOWER(address.address2) = '' THEN address.address
         ELSE address.address || ', ' || address.address2
     END
 ORDER BY revenue DESC, store_address ASC;
@@ -204,7 +204,7 @@ ORDER BY revenue DESC, store_address ASC;
 -- ---------------------------------------------------------
 SELECT
     CASE
-        WHEN address.address2 IS NULL OR address.address2 = '' THEN address.address
+        WHEN address.address2 IS NULL OR LOWER(address.address2) = '' THEN address.address
         ELSE address.address || ', ' || address.address2
     END AS store_address,
     store_revenue.revenue
@@ -227,8 +227,6 @@ INNER JOIN (
 ORDER BY store_revenue.revenue DESC, store_address ASC;
 
 
-
-
 -- ---------------------------------------------------------
 -- TASK 2 - CTE SOLUTION
 -- Here I use a CTE to calculate revenue first,
@@ -248,7 +246,7 @@ WITH store_revenue AS (
 )
 SELECT
     CASE
-        WHEN address.address2 IS NULL OR address.address2 = '' THEN address.address
+        WHEN address.address2 IS NULL OR LOWER(address.address2) = '' THEN address.address
         ELSE address.address || ', ' || address.address2
     END AS store_address,
     store_revenue.revenue
@@ -308,7 +306,7 @@ JOIN behavior:
 My understanding:
 -- I count how many films each actor appeared in since 2015.
 -- I connect actor → film_actor → film to get this information.
--- Then I group by actor and sort by number of movies. 
+-- Then I group by actor and sort by number of movies.
 -- ---------------------------------------------------------
 ========================================================= */
 
@@ -467,15 +465,15 @@ My understanding:
 -- ---------------------------------------------------------
 SELECT
     film.release_year,
-    SUM(CASE WHEN category.name = 'Drama' THEN 1 ELSE 0 END) AS number_of_drama_movies,
-    SUM(CASE WHEN category.name = 'Travel' THEN 1 ELSE 0 END) AS number_of_travel_movies,
-    SUM(CASE WHEN category.name = 'Documentary' THEN 1 ELSE 0 END) AS number_of_documentary_movies
+    SUM(CASE WHEN LOWER(category.name) = 'drama' THEN 1 ELSE 0 END) AS number_of_drama_movies,
+    SUM(CASE WHEN LOWER(category.name) = 'travel' THEN 1 ELSE 0 END) AS number_of_travel_movies,
+    SUM(CASE WHEN LOWER(category.name) = 'documentary' THEN 1 ELSE 0 END) AS number_of_documentary_movies
 FROM public.film AS film
 INNER JOIN public.film_category AS film_category
     ON film.film_id = film_category.film_id
 INNER JOIN public.category AS category
     ON film_category.category_id = category.category_id
-WHERE category.name IN ('Drama', 'Travel', 'Documentary')
+WHERE LOWER(category.name) IN ('drama', 'travel', 'documentary')
 GROUP BY film.release_year
 ORDER BY film.release_year DESC;
 
@@ -498,7 +496,7 @@ FROM (
         ON film.film_id = film_category.film_id
     INNER JOIN public.category AS category
         ON film_category.category_id = category.category_id
-    WHERE category.name IN ('Drama', 'Travel', 'Documentary')
+    WHERE LOWER(category.name) IN ('drama', 'travel', 'documentary')
 ) AS release_years
 LEFT JOIN (
     SELECT
@@ -509,7 +507,7 @@ LEFT JOIN (
         ON film.film_id = film_category.film_id
     INNER JOIN public.category AS category
         ON film_category.category_id = category.category_id
-    WHERE category.name = 'Drama'
+    WHERE LOWER(category.name) = 'drama'
     GROUP BY film.release_year
 ) AS drama_counts
     ON release_years.release_year = drama_counts.release_year
@@ -522,7 +520,7 @@ LEFT JOIN (
         ON film.film_id = film_category.film_id
     INNER JOIN public.category AS category
         ON film_category.category_id = category.category_id
-    WHERE category.name = 'Travel'
+    WHERE LOWER(category.name) = 'travel'
     GROUP BY film.release_year
 ) AS travel_counts
     ON release_years.release_year = travel_counts.release_year
@@ -535,7 +533,7 @@ LEFT JOIN (
         ON film.film_id = film_category.film_id
     INNER JOIN public.category AS category
         ON film_category.category_id = category.category_id
-    WHERE category.name = 'Documentary'
+    WHERE LOWER(category.name) = 'documentary'
     GROUP BY film.release_year
 ) AS documentary_counts
     ON release_years.release_year = documentary_counts.release_year
@@ -556,13 +554,13 @@ WITH genre_films AS (
         ON film.film_id = film_category.film_id
     INNER JOIN public.category AS category
         ON film_category.category_id = category.category_id
-    WHERE category.name IN ('Drama', 'Travel', 'Documentary')
+    WHERE LOWER(category.name) IN ('drama', 'travel', 'documentary')
 )
 SELECT
     genre_films.release_year,
-    SUM(CASE WHEN genre_films.category_name = 'Drama' THEN 1 ELSE 0 END) AS number_of_drama_movies,
-    SUM(CASE WHEN genre_films.category_name = 'Travel' THEN 1 ELSE 0 END) AS number_of_travel_movies,
-    SUM(CASE WHEN genre_films.category_name = 'Documentary' THEN 1 ELSE 0 END) AS number_of_documentary_movies
+    SUM(CASE WHEN LOWER(genre_films.category_name) = 'drama' THEN 1 ELSE 0 END) AS number_of_drama_movies,
+    SUM(CASE WHEN LOWER(genre_films.category_name) = 'travel' THEN 1 ELSE 0 END) AS number_of_travel_movies,
+    SUM(CASE WHEN LOWER(genre_films.category_name) = 'documentary' THEN 1 ELSE 0 END) AS number_of_documentary_movies
 FROM genre_films
 GROUP BY genre_films.release_year
 ORDER BY genre_films.release_year DESC;
@@ -653,7 +651,7 @@ INNER JOIN (
             payment.staff_id,
             inventory.store_id,
             CASE
-                WHEN address.address2 IS NULL OR address.address2 = '' THEN address.address
+                WHEN address.address2 IS NULL OR LOWER(address.address2) = '' THEN address.address
                 ELSE address.address || ', ' || address.address2
             END AS store_address,
             payment.payment_date
@@ -718,7 +716,7 @@ INNER JOIN (
             payment.staff_id,
             inventory.store_id,
             CASE
-                WHEN address.address2 IS NULL OR address.address2 = '' THEN address.address
+                WHEN address.address2 IS NULL OR LOWER(address.address2) = '' THEN address.address
                 ELSE address.address || ', ' || address.address2
             END AS store_address
         FROM public.payment AS payment
@@ -766,7 +764,7 @@ WITH payments_2017 AS (
         payment.payment_date,
         inventory.store_id,
         CASE
-            WHEN address.address2 IS NULL OR address.address2 = '' THEN address.address
+            WHEN address.address2 IS NULL OR LOWER(address.address2) = '' THEN address.address
             ELSE address.address || ', ' || address.address2
         END AS store_address
     FROM public.payment AS payment
@@ -863,7 +861,7 @@ The management team wants to identify the most popular movies
 and their target audience age groups to optimize marketing efforts.
 Show which 5 movies were rented more than others
 (number of rentals), and what's the expected age of the audience
-for these movies? 
+for these movies?
 
 Expected output example:
 title, number_of_rentals, expected_age
@@ -936,7 +934,6 @@ ORDER BY
     film_rentals.number_of_rentals DESC,
     film.title ASC
 LIMIT 5;
-
 
 -- ---------------------------------------------------------
 -- TASK 2 - CTE SOLUTION
@@ -1350,7 +1347,7 @@ ORDER BY
 
 -- Production choice:
 -- I would use the CTE solution in production because this task is more complex,
--- and the CTE version is the easiest to explain, test  and maintain.
+-- and the CTE version is the easiest to explain, test and maintain.
 
 -- Note:
 -- A pure JOIN-only solution is less natural for this task because
