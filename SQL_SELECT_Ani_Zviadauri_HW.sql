@@ -56,18 +56,18 @@ JOIN behavior:
 -- easy to read, and directly shows how tables are connected.
 -- ---------------------------------------------------------
 SELECT
-    f.title,
-    f.release_year,
-    f.rental_rate
-FROM public.film AS f
-INNER JOIN public.film_category AS fc
-    ON f.film_id = fc.film_id
-INNER JOIN public.category AS c
-    ON fc.category_id = c.category_id
-WHERE c.name = 'Animation'
-  AND f.release_year BETWEEN 2017 AND 2019
-  AND f.rental_rate > 1
-ORDER BY f.title ASC;
+    film.title,
+    film.release_year,
+    film.rental_rate
+FROM public.film AS film
+INNER JOIN public.film_category AS film_category
+    ON film.film_id = film_category.film_id
+INNER JOIN public.category AS category
+    ON film_category.category_id = category.category_id
+WHERE category.name = 'Animation'
+  AND film.release_year BETWEEN 2017 AND 2019
+  AND film.rental_rate > 1
+ORDER BY film.title ASC;
 
 
 -- ---------------------------------------------------------
@@ -76,20 +76,21 @@ ORDER BY f.title ASC;
 -- and then apply the rest of the conditions.
 -- ---------------------------------------------------------
 SELECT
-    f.title,
-    f.release_year,
-    f.rental_rate
-FROM public.film AS f
-WHERE f.film_id IN (
-    SELECT fc.film_id
-    FROM public.film_category AS fc
-    INNER JOIN public.category AS c
-        ON fc.category_id = c.category_id
-    WHERE c.name = 'Animation'
+    film.title,
+    film.release_year,
+    film.rental_rate
+FROM public.film AS film
+WHERE film.film_id IN (
+    SELECT
+        film_category.film_id
+    FROM public.film_category AS film_category
+    INNER JOIN public.category AS category
+        ON film_category.category_id = category.category_id
+    WHERE category.name = 'Animation'
 )
-  AND f.release_year BETWEEN 2017 AND 2019
-  AND f.rental_rate > 1
-ORDER BY f.title ASC;
+  AND film.release_year BETWEEN 2017 AND 2019
+  AND film.rental_rate > 1
+ORDER BY film.title ASC;
 
 
 -- ---------------------------------------------------------
@@ -99,22 +100,22 @@ ORDER BY f.title ASC;
 -- ---------------------------------------------------------
 WITH animation_films AS (
     SELECT
-        fc.film_id
-    FROM public.film_category AS fc
-    INNER JOIN public.category AS c
-        ON fc.category_id = c.category_id
-    WHERE c.name = 'Animation'
+        film_category.film_id
+    FROM public.film_category AS film_category
+    INNER JOIN public.category AS category
+        ON film_category.category_id = category.category_id
+    WHERE category.name = 'Animation'
 )
 SELECT
-    f.title,
-    f.release_year,
-    f.rental_rate
-FROM public.film AS f
-INNER JOIN animation_films AS af
-    ON f.film_id = af.film_id
-WHERE f.release_year BETWEEN 2017 AND 2019
-  AND f.rental_rate > 1
-ORDER BY f.title ASC;
+    film.title,
+    film.release_year,
+    film.rental_rate
+FROM public.film AS film
+INNER JOIN animation_films AS animation_films_cte
+    ON film.film_id = animation_films_cte.film_id
+WHERE film.release_year BETWEEN 2017 AND 2019
+  AND film.rental_rate > 1
+ORDER BY film.title ASC;
 
 -- Advantages / disadvantages / production choice:
 
@@ -175,27 +176,26 @@ JOIN behavior:
 -- ---------------------------------------------------------
 SELECT
     CASE
-        WHEN a.address2 IS NULL OR a.address2 = '' THEN a.address
-        ELSE a.address || ', ' || a.address2
+        WHEN address.address2 IS NULL OR address.address2 = '' THEN address.address
+        ELSE address.address || ', ' || address.address2
     END AS store_address,
-    SUM(p.amount) AS revenue
-FROM public.store AS s
-INNER JOIN public.address AS a
-    ON s.address_id = a.address_id
-INNER JOIN public.inventory AS i
-    ON s.store_id = i.store_id
-INNER JOIN public.rental AS r
-    ON i.inventory_id = r.inventory_id
-INNER JOIN public.payment AS p
-    ON r.rental_id = p.rental_id
-WHERE p.payment_date >= DATE '2017-04-01'
+    SUM(payment.amount) AS revenue
+FROM public.store AS store
+INNER JOIN public.address AS address
+    ON store.address_id = address.address_id
+INNER JOIN public.inventory AS inventory
+    ON store.store_id = inventory.store_id
+INNER JOIN public.rental AS rental
+    ON inventory.inventory_id = rental.inventory_id
+INNER JOIN public.payment AS payment
+    ON rental.rental_id = payment.rental_id
+WHERE payment.payment_date >= DATE '2017-04-01'
 GROUP BY
     CASE
-        WHEN a.address2 IS NULL OR a.address2 = '' THEN a.address
-        ELSE a.address || ', ' || a.address2
+        WHEN address.address2 IS NULL OR address.address2 = '' THEN address.address
+        ELSE address.address || ', ' || address.address2
     END
 ORDER BY revenue DESC, store_address ASC;
-
 
 -- ---------------------------------------------------------
 -- TASK 2 - SUBQUERY SOLUTION
@@ -204,27 +204,29 @@ ORDER BY revenue DESC, store_address ASC;
 -- ---------------------------------------------------------
 SELECT
     CASE
-        WHEN a.address2 IS NULL OR a.address2 = '' THEN a.address
-        ELSE a.address || ', ' || a.address2
+        WHEN address.address2 IS NULL OR address.address2 = '' THEN address.address
+        ELSE address.address || ', ' || address.address2
     END AS store_address,
-    sr.revenue
-FROM public.store AS s
-INNER JOIN public.address AS a
-    ON s.address_id = a.address_id
+    store_revenue.revenue
+FROM public.store AS store
+INNER JOIN public.address AS address
+    ON store.address_id = address.address_id
 INNER JOIN (
     SELECT
-        i.store_id,
-        SUM(p.amount) AS revenue
-    FROM public.inventory AS i
-    INNER JOIN public.rental AS r
-        ON i.inventory_id = r.inventory_id
-    INNER JOIN public.payment AS p
-        ON r.rental_id = p.rental_id
-    WHERE p.payment_date >= DATE '2017-04-01'
-    GROUP BY i.store_id
-) AS sr
-    ON s.store_id = sr.store_id
-ORDER BY sr.revenue DESC, store_address ASC;
+        inventory.store_id,
+        SUM(payment.amount) AS revenue
+    FROM public.inventory AS inventory
+    INNER JOIN public.rental AS rental
+        ON inventory.inventory_id = rental.inventory_id
+    INNER JOIN public.payment AS payment
+        ON rental.rental_id = payment.rental_id
+    WHERE payment.payment_date >= DATE '2017-04-01'
+    GROUP BY inventory.store_id
+) AS store_revenue
+    ON store.store_id = store_revenue.store_id
+ORDER BY store_revenue.revenue DESC, store_address ASC;
+
+
 
 
 -- ---------------------------------------------------------
@@ -234,29 +236,28 @@ ORDER BY sr.revenue DESC, store_address ASC;
 -- ---------------------------------------------------------
 WITH store_revenue AS (
     SELECT
-        i.store_id,
-        SUM(p.amount) AS revenue
-    FROM public.inventory AS i
-    INNER JOIN public.rental AS r
-        ON i.inventory_id = r.inventory_id
-    INNER JOIN public.payment AS p
-        ON r.rental_id = p.rental_id
-    WHERE p.payment_date >= DATE '2017-04-01'
-    GROUP BY i.store_id
+        inventory.store_id,
+        SUM(payment.amount) AS revenue
+    FROM public.inventory AS inventory
+    INNER JOIN public.rental AS rental
+        ON inventory.inventory_id = rental.inventory_id
+    INNER JOIN public.payment AS payment
+        ON rental.rental_id = payment.rental_id
+    WHERE payment.payment_date >= DATE '2017-04-01'
+    GROUP BY inventory.store_id
 )
 SELECT
     CASE
-        WHEN a.address2 IS NULL OR a.address2 = '' THEN a.address
-        ELSE a.address || ', ' || a.address2
+        WHEN address.address2 IS NULL OR address.address2 = '' THEN address.address
+        ELSE address.address || ', ' || address.address2
     END AS store_address,
-    sr.revenue
-FROM store_revenue AS sr
-INNER JOIN public.store AS s
-    ON sr.store_id = s.store_id
-INNER JOIN public.address AS a
-    ON s.address_id = a.address_id
-ORDER BY sr.revenue DESC, store_address ASC;
-
+    store_revenue.revenue
+FROM store_revenue
+INNER JOIN public.store AS store
+    ON store_revenue.store_id = store.store_id
+INNER JOIN public.address AS address
+    ON store.address_id = address.address_id
+ORDER BY store_revenue.revenue DESC, store_address ASC;
 
 -- Advantages / disadvantages / production choice:
 -- ---------------------------------------------------------
@@ -316,24 +317,25 @@ My understanding:
 -- and count how many movies each actor has.
 ------------------------------------------------------------
 SELECT
-    a.first_name,
-    a.last_name,
-    COUNT(f.film_id) AS number_of_movies
-FROM public.actor AS a
-INNER JOIN public.film_actor AS fa
-    ON a.actor_id = fa.actor_id
-INNER JOIN public.film AS f
-    ON fa.film_id = f.film_id
-WHERE f.release_year >= 2015
+    actor.first_name,
+    actor.last_name,
+    COUNT(film.film_id) AS number_of_movies
+FROM public.actor AS actor
+INNER JOIN public.film_actor AS film_actor
+    ON actor.actor_id = film_actor.actor_id
+INNER JOIN public.film AS film
+    ON film_actor.film_id = film.film_id
+WHERE film.release_year >= 2015
 GROUP BY
-    a.actor_id,
-    a.first_name,
-    a.last_name
+    actor.actor_id,
+    actor.first_name,
+    actor.last_name
 ORDER BY
     number_of_movies DESC,
-    a.last_name ASC,
-    a.first_name ASC
+    actor.last_name ASC,
+    actor.first_name ASC
 LIMIT 5;
+
 
 -------------------------------------------------------------
 -- TASK 3 - SUBQUERY SOLUTION
@@ -341,59 +343,62 @@ LIMIT 5;
 -- and then I group and count them in the outer query.
 -- ---------------------------------------------------------
 SELECT
-    t.first_name,
-    t.last_name,
-    COUNT(t.film_id) AS number_of_movies
+    actor_films.first_name,
+    actor_films.last_name,
+    COUNT(actor_films.film_id) AS number_of_movies
 FROM (
     SELECT
-        a.actor_id,
-        a.first_name,
-        a.last_name,
-        f.film_id
-    FROM public.actor AS a
-    INNER JOIN public.film_actor AS fa
-        ON a.actor_id = fa.actor_id
-    INNER JOIN public.film AS f
-        ON fa.film_id = f.film_id
-    WHERE f.release_year >= 2015
-) AS t
+        actor.actor_id,
+        actor.first_name,
+        actor.last_name,
+        film.film_id
+    FROM public.actor AS actor
+    INNER JOIN public.film_actor AS film_actor
+        ON actor.actor_id = film_actor.actor_id
+    INNER JOIN public.film AS film
+        ON film_actor.film_id = film.film_id
+    WHERE film.release_year >= 2015
+) AS actor_films
 GROUP BY
-    t.actor_id,
-    t.first_name,
-    t.last_name
+    actor_films.actor_id,
+    actor_films.first_name,
+    actor_films.last_name
 ORDER BY
     number_of_movies DESC,
-    t.last_name ASC,
-    t.first_name ASC
+    actor_films.last_name ASC,
+    actor_films.first_name ASC
 LIMIT 5;
-------------------------------------------------------------
+--------------------------------------------------
 -- TASK 3 - CTE SOLUTION
 -- Here I use a CTE to first get all actor-film rows since 2015,
 -- and then I aggregate them in the main query.
 -- ---------------------------------------------------------
 WITH actor_films_since_2015 AS (
     SELECT
-        a.actor_id,
-        a.first_name,
-        a.last_name,
-        f.film_id
-    FROM public.actor AS a
-    INNER JOIN public.film_actor AS fa
-        ON a.actor_id = fa.actor_id
-    INNER JOIN public.film AS f
-        ON fa.film_id = f.film_id
-    WHERE f.release_year >= 2015
+        actor.actor_id,
+        actor.first_name,
+        actor.last_name,
+        film.film_id
+    FROM public.actor AS actor
+    INNER JOIN public.film_actor AS film_actor
+        ON actor.actor_id = film_actor.actor_id
+    INNER JOIN public.film AS film
+        ON film_actor.film_id = film.film_id
+    WHERE film.release_year >= 2015
 )
 SELECT
-    af.first_name,
-    af.last_name,
-    COUNT(af.film_id) AS number_of_movies
-FROM actor_films_since_2015 AS af
+    actor_films_since_2015.first_name,
+    actor_films_since_2015.last_name,
+    COUNT(actor_films_since_2015.film_id) AS number_of_movies
+FROM actor_films_since_2015
 GROUP BY
-    af.actor_id,
-    af.first_name,
-    af.last_name
-ORDER BY number_of_movies DESC, af.last_name ASC, af.first_name ASC
+    actor_films_since_2015.actor_id,
+    actor_films_since_2015.first_name,
+    actor_films_since_2015.last_name
+ORDER BY
+    number_of_movies DESC,
+    actor_films_since_2015.last_name ASC,
+    actor_films_since_2015.first_name ASC
 LIMIT 5;
 
 -- Advantages / disadvantages / production choice:
@@ -461,19 +466,18 @@ My understanding:
 -- directly in one query.
 -- ---------------------------------------------------------
 SELECT
-    f.release_year,
-    SUM(CASE WHEN c.name = 'Drama' THEN 1 ELSE 0 END) AS number_of_drama_movies,
-    SUM(CASE WHEN c.name = 'Travel' THEN 1 ELSE 0 END) AS number_of_travel_movies,
-    SUM(CASE WHEN c.name = 'Documentary' THEN 1 ELSE 0 END) AS number_of_documentary_movies
-FROM public.film AS f
-INNER JOIN public.film_category AS fc
-    ON f.film_id = fc.film_id
-INNER JOIN public.category AS c
-    ON fc.category_id = c.category_id
-WHERE c.name IN ('Drama', 'Travel', 'Documentary')
-GROUP BY f.release_year
-ORDER BY f.release_year DESC;
-
+    film.release_year,
+    SUM(CASE WHEN category.name = 'Drama' THEN 1 ELSE 0 END) AS number_of_drama_movies,
+    SUM(CASE WHEN category.name = 'Travel' THEN 1 ELSE 0 END) AS number_of_travel_movies,
+    SUM(CASE WHEN category.name = 'Documentary' THEN 1 ELSE 0 END) AS number_of_documentary_movies
+FROM public.film AS film
+INNER JOIN public.film_category AS film_category
+    ON film.film_id = film_category.film_id
+INNER JOIN public.category AS category
+    ON film_category.category_id = category.category_id
+WHERE category.name IN ('Drama', 'Travel', 'Documentary')
+GROUP BY film.release_year
+ORDER BY film.release_year DESC;
 
 -- ---------------------------------------------------------
 -- TASK 4 - SUBQUERY SOLUTION
@@ -482,55 +486,60 @@ ORDER BY f.release_year DESC;
 -- I use LEFT JOIN to make sure no years are lost.
 -- ---------------------------------------------------------
 SELECT
-    y.release_year,
-    COALESCE(d.number_of_drama_movies, 0) AS number_of_drama_movies,
-    COALESCE(t.number_of_travel_movies, 0) AS number_of_travel_movies,
-    COALESCE(dc.number_of_documentary_movies, 0) AS number_of_documentary_movies
+    release_years.release_year,
+    COALESCE(drama_counts.number_of_drama_movies, 0) AS number_of_drama_movies,
+    COALESCE(travel_counts.number_of_travel_movies, 0) AS number_of_travel_movies,
+    COALESCE(documentary_counts.number_of_documentary_movies, 0) AS number_of_documentary_movies
 FROM (
     SELECT DISTINCT
-        f.release_year
-    FROM public.film AS f
-) AS y
+        film.release_year
+    FROM public.film AS film
+    INNER JOIN public.film_category AS film_category
+        ON film.film_id = film_category.film_id
+    INNER JOIN public.category AS category
+        ON film_category.category_id = category.category_id
+    WHERE category.name IN ('Drama', 'Travel', 'Documentary')
+) AS release_years
 LEFT JOIN (
     SELECT
-        f.release_year,
+        film.release_year,
         COUNT(*) AS number_of_drama_movies
-    FROM public.film AS f
-    INNER JOIN public.film_category AS fc
-        ON f.film_id = fc.film_id
-    INNER JOIN public.category AS c
-        ON fc.category_id = c.category_id
-    WHERE c.name = 'Drama'
-    GROUP BY f.release_year
-) AS d
-    ON y.release_year = d.release_year
+    FROM public.film AS film
+    INNER JOIN public.film_category AS film_category
+        ON film.film_id = film_category.film_id
+    INNER JOIN public.category AS category
+        ON film_category.category_id = category.category_id
+    WHERE category.name = 'Drama'
+    GROUP BY film.release_year
+) AS drama_counts
+    ON release_years.release_year = drama_counts.release_year
 LEFT JOIN (
     SELECT
-        f.release_year,
+        film.release_year,
         COUNT(*) AS number_of_travel_movies
-    FROM public.film AS f
-    INNER JOIN public.film_category AS fc
-        ON f.film_id = fc.film_id
-    INNER JOIN public.category AS c
-        ON fc.category_id = c.category_id
-    WHERE c.name = 'Travel'
-    GROUP BY f.release_year
-) AS t
-    ON y.release_year = t.release_year
+    FROM public.film AS film
+    INNER JOIN public.film_category AS film_category
+        ON film.film_id = film_category.film_id
+    INNER JOIN public.category AS category
+        ON film_category.category_id = category.category_id
+    WHERE category.name = 'Travel'
+    GROUP BY film.release_year
+) AS travel_counts
+    ON release_years.release_year = travel_counts.release_year
 LEFT JOIN (
     SELECT
-        f.release_year,
+        film.release_year,
         COUNT(*) AS number_of_documentary_movies
-    FROM public.film AS f
-    INNER JOIN public.film_category AS fc
-        ON f.film_id = fc.film_id
-    INNER JOIN public.category AS c
-        ON fc.category_id = c.category_id
-    WHERE c.name = 'Documentary'
-    GROUP BY f.release_year
-) AS dc
-    ON y.release_year = dc.release_year
-ORDER BY y.release_year DESC;
+    FROM public.film AS film
+    INNER JOIN public.film_category AS film_category
+        ON film.film_id = film_category.film_id
+    INNER JOIN public.category AS category
+        ON film_category.category_id = category.category_id
+    WHERE category.name = 'Documentary'
+    GROUP BY film.release_year
+) AS documentary_counts
+    ON release_years.release_year = documentary_counts.release_year
+ORDER BY release_years.release_year DESC;
 
 
 -- ---------------------------------------------------------
@@ -540,23 +549,23 @@ ORDER BY y.release_year DESC;
 -- ---------------------------------------------------------
 WITH genre_films AS (
     SELECT
-        f.release_year,
-        c.name AS category_name
-    FROM public.film AS f
-    INNER JOIN public.film_category AS fc
-        ON f.film_id = fc.film_id
-    INNER JOIN public.category AS c
-        ON fc.category_id = c.category_id
-    WHERE c.name IN ('Drama', 'Travel', 'Documentary')
+        film.release_year,
+        category.name AS category_name
+    FROM public.film AS film
+    INNER JOIN public.film_category AS film_category
+        ON film.film_id = film_category.film_id
+    INNER JOIN public.category AS category
+        ON film_category.category_id = category.category_id
+    WHERE category.name IN ('Drama', 'Travel', 'Documentary')
 )
 SELECT
-    gf.release_year,
-    SUM(CASE WHEN gf.category_name = 'Drama' THEN 1 ELSE 0 END) AS number_of_drama_movies,
-    SUM(CASE WHEN gf.category_name = 'Travel' THEN 1 ELSE 0 END) AS number_of_travel_movies,
-    SUM(CASE WHEN gf.category_name = 'Documentary' THEN 1 ELSE 0 END) AS number_of_documentary_movies
-FROM genre_films AS gf
-GROUP BY gf.release_year
-ORDER BY gf.release_year DESC;
+    genre_films.release_year,
+    SUM(CASE WHEN genre_films.category_name = 'Drama' THEN 1 ELSE 0 END) AS number_of_drama_movies,
+    SUM(CASE WHEN genre_films.category_name = 'Travel' THEN 1 ELSE 0 END) AS number_of_travel_movies,
+    SUM(CASE WHEN genre_films.category_name = 'Documentary' THEN 1 ELSE 0 END) AS number_of_documentary_movies
+FROM genre_films
+GROUP BY genre_films.release_year
+ORDER BY genre_films.release_year DESC;
 
 -- Advantages / disadvantages / production choice:
 
@@ -618,61 +627,61 @@ My understanding:
 -- ---------------------------------------------------------
 
 SELECT
-    s.first_name,
-    s.last_name,
-    rs.revenue_2017,
-    ls.last_store_id,
-    ls.last_store_address
-FROM public.staff AS s
+    staff.first_name,
+    staff.last_name,
+    revenue_summary.revenue_2017,
+    last_store_summary.last_store_id,
+    last_store_summary.last_store_address
+FROM public.staff AS staff
 INNER JOIN (
     SELECT
-        p.staff_id,
-        SUM(p.amount) AS revenue_2017
-    FROM public.payment AS p
-    WHERE p.payment_date >= TIMESTAMP '2017-01-01 00:00:00'
-      AND p.payment_date < TIMESTAMP '2018-01-01 00:00:00'
-    GROUP BY p.staff_id
-) AS rs
-    ON s.staff_id = rs.staff_id
+        payment.staff_id,
+        SUM(payment.amount) AS revenue_2017
+    FROM public.payment AS payment
+    WHERE payment.payment_date >= TIMESTAMP '2017-01-01 00:00:00'
+      AND payment.payment_date < TIMESTAMP '2018-01-01 00:00:00'
+    GROUP BY payment.staff_id
+) AS revenue_summary
+    ON staff.staff_id = revenue_summary.staff_id
 INNER JOIN (
     SELECT
-        x.staff_id,
-        MIN(x.store_id) AS last_store_id,
-        MIN(x.store_address) AS last_store_address
+        latest_store_rows.staff_id,
+        MIN(latest_store_rows.store_id) AS last_store_id,
+        MIN(latest_store_rows.store_address) AS last_store_address
     FROM (
         SELECT
-            p.staff_id,
-            i.store_id,
+            payment.staff_id,
+            inventory.store_id,
             CASE
-                WHEN a.address2 IS NULL OR a.address2 = '' THEN a.address
-                ELSE a.address || ', ' || a.address2
+                WHEN address.address2 IS NULL OR address.address2 = '' THEN address.address
+                ELSE address.address || ', ' || address.address2
             END AS store_address,
-            p.payment_date
-        FROM public.payment AS p
-        INNER JOIN public.rental AS r
-            ON p.rental_id = r.rental_id
-        INNER JOIN public.inventory AS i
-            ON r.inventory_id = i.inventory_id
-        INNER JOIN public.store AS st
-            ON i.store_id = st.store_id
-        INNER JOIN public.address AS a
-            ON st.address_id = a.address_id
-        LEFT JOIN public.payment AS p_later
-            ON p.staff_id = p_later.staff_id
-           AND p_later.payment_date >= TIMESTAMP '2017-01-01 00:00:00'
-           AND p_later.payment_date < TIMESTAMP '2018-01-01 00:00:00'
-           AND p_later.payment_date > p.payment_date
-        WHERE p.payment_date >= TIMESTAMP '2017-01-01 00:00:00'
-          AND p.payment_date < TIMESTAMP '2018-01-01 00:00:00'
-          AND p_later.payment_id IS NULL
-    ) AS x
-    GROUP BY x.staff_id
-) AS ls
-    ON s.staff_id = ls.staff_id
+            payment.payment_date
+        FROM public.payment AS payment
+        INNER JOIN public.rental AS rental
+            ON payment.rental_id = rental.rental_id
+        INNER JOIN public.inventory AS inventory
+            ON rental.inventory_id = inventory.inventory_id
+        INNER JOIN public.store AS store
+            ON inventory.store_id = store.store_id
+        INNER JOIN public.address AS address
+            ON store.address_id = address.address_id
+        LEFT JOIN public.payment AS later_payment
+            ON payment.staff_id = later_payment.staff_id
+           AND later_payment.payment_date >= TIMESTAMP '2017-01-01 00:00:00'
+           AND later_payment.payment_date < TIMESTAMP '2018-01-01 00:00:00'
+           AND later_payment.payment_date > payment.payment_date
+        WHERE payment.payment_date >= TIMESTAMP '2017-01-01 00:00:00'
+          AND payment.payment_date < TIMESTAMP '2018-01-01 00:00:00'
+          AND later_payment.payment_id IS NULL
+    ) AS latest_store_rows
+    GROUP BY latest_store_rows.staff_id
+) AS last_store_summary
+    ON staff.staff_id = last_store_summary.staff_id
 ORDER BY
-    rs.revenue_2017 DESC,
-    s.last_name ASC,
-    s.first_name ASC
+    revenue_summary.revenue_2017 DESC,
+    staff.last_name ASC,
+    staff.first_name ASC
 LIMIT 3;
 
 
@@ -683,61 +692,61 @@ LIMIT 3;
 -- and then connect that date to the last store.
 -- ---------------------------------------------------------
 SELECT
-    s.first_name,
-    s.last_name,
-    rev.revenue_2017,
-    last_store.last_store_id,
-    last_store.last_store_address
-FROM public.staff AS s
+    staff.first_name,
+    staff.last_name,
+    revenue_summary.revenue_2017,
+    last_store_summary.last_store_id,
+    last_store_summary.last_store_address
+FROM public.staff AS staff
 INNER JOIN (
     SELECT
-        p.staff_id,
-        SUM(p.amount) AS revenue_2017
-    FROM public.payment AS p
-    WHERE p.payment_date >= TIMESTAMP '2017-01-01 00:00:00'
-      AND p.payment_date < TIMESTAMP '2018-01-01 00:00:00'
-    GROUP BY p.staff_id
-) AS rev
-    ON s.staff_id = rev.staff_id
+        payment.staff_id,
+        SUM(payment.amount) AS revenue_2017
+    FROM public.payment AS payment
+    WHERE payment.payment_date >= TIMESTAMP '2017-01-01 00:00:00'
+      AND payment.payment_date < TIMESTAMP '2018-01-01 00:00:00'
+    GROUP BY payment.staff_id
+) AS revenue_summary
+    ON staff.staff_id = revenue_summary.staff_id
 INNER JOIN (
     SELECT
-        t.staff_id,
-        MIN(t.store_id) AS last_store_id,
-        MIN(t.store_address) AS last_store_address
+        latest_store_rows.staff_id,
+        MIN(latest_store_rows.store_id) AS last_store_id,
+        MIN(latest_store_rows.store_address) AS last_store_address
     FROM (
         SELECT
-            p.staff_id,
-            i.store_id,
+            payment.staff_id,
+            inventory.store_id,
             CASE
-                WHEN a.address2 IS NULL OR a.address2 = '' THEN a.address
-                ELSE a.address || ', ' || a.address2
+                WHEN address.address2 IS NULL OR address.address2 = '' THEN address.address
+                ELSE address.address || ', ' || address.address2
             END AS store_address
-        FROM public.payment AS p
-        INNER JOIN public.rental AS r
-            ON p.rental_id = r.rental_id
-        INNER JOIN public.inventory AS i
-            ON r.inventory_id = i.inventory_id
-        INNER JOIN public.store AS st
-            ON i.store_id = st.store_id
-        INNER JOIN public.address AS a
-            ON st.address_id = a.address_id
-        WHERE p.payment_date = (
-            SELECT MAX(p2.payment_date)
-            FROM public.payment AS p2
-            WHERE p2.staff_id = p.staff_id
-              AND p2.payment_date >= TIMESTAMP '2017-01-01 00:00:00'
-              AND p2.payment_date < TIMESTAMP '2018-01-01 00:00:00'
+        FROM public.payment AS payment
+        INNER JOIN public.rental AS rental
+            ON payment.rental_id = rental.rental_id
+        INNER JOIN public.inventory AS inventory
+            ON rental.inventory_id = inventory.inventory_id
+        INNER JOIN public.store AS store
+            ON inventory.store_id = store.store_id
+        INNER JOIN public.address AS address
+            ON store.address_id = address.address_id
+        WHERE payment.payment_date = (
+            SELECT MAX(payment_2017.payment_date)
+            FROM public.payment AS payment_2017
+            WHERE payment_2017.staff_id = payment.staff_id
+              AND payment_2017.payment_date >= TIMESTAMP '2017-01-01 00:00:00'
+              AND payment_2017.payment_date < TIMESTAMP '2018-01-01 00:00:00'
         )
-          AND p.payment_date >= TIMESTAMP '2017-01-01 00:00:00'
-          AND p.payment_date < TIMESTAMP '2018-01-01 00:00:00'
-    ) AS t
-    GROUP BY t.staff_id
-) AS last_store
-    ON s.staff_id = last_store.staff_id
+          AND payment.payment_date >= TIMESTAMP '2017-01-01 00:00:00'
+          AND payment.payment_date < TIMESTAMP '2018-01-01 00:00:00'
+    ) AS latest_store_rows
+    GROUP BY latest_store_rows.staff_id
+) AS last_store_summary
+    ON staff.staff_id = last_store_summary.staff_id
 ORDER BY
-    rev.revenue_2017 DESC,
-    s.last_name ASC,
-    s.first_name ASC
+    revenue_summary.revenue_2017 DESC,
+    staff.last_name ASC,
+    staff.first_name ASC
 LIMIT 3;
 
 
@@ -751,67 +760,67 @@ LIMIT 3;
 -- ---------------------------------------------------------
 WITH payments_2017 AS (
     SELECT
-        p.payment_id,
-        p.staff_id,
-        p.amount,
-        p.payment_date,
-        i.store_id,
+        payment.payment_id,
+        payment.staff_id,
+        payment.amount,
+        payment.payment_date,
+        inventory.store_id,
         CASE
-            WHEN a.address2 IS NULL OR a.address2 = '' THEN a.address
-            ELSE a.address || ', ' || a.address2
+            WHEN address.address2 IS NULL OR address.address2 = '' THEN address.address
+            ELSE address.address || ', ' || address.address2
         END AS store_address
-    FROM public.payment AS p
-    INNER JOIN public.rental AS r
-        ON p.rental_id = r.rental_id
-    INNER JOIN public.inventory AS i
-        ON r.inventory_id = i.inventory_id
-    INNER JOIN public.store AS st
-        ON i.store_id = st.store_id
-    INNER JOIN public.address AS a
-        ON st.address_id = a.address_id
-    WHERE p.payment_date >= TIMESTAMP '2017-01-01 00:00:00'
-      AND p.payment_date < TIMESTAMP '2018-01-01 00:00:00'
+    FROM public.payment AS payment
+    INNER JOIN public.rental AS rental
+        ON payment.rental_id = rental.rental_id
+    INNER JOIN public.inventory AS inventory
+        ON rental.inventory_id = inventory.inventory_id
+    INNER JOIN public.store AS store
+        ON inventory.store_id = store.store_id
+    INNER JOIN public.address AS address
+        ON store.address_id = address.address_id
+    WHERE payment.payment_date >= TIMESTAMP '2017-01-01 00:00:00'
+      AND payment.payment_date < TIMESTAMP '2018-01-01 00:00:00'
 ),
 revenue_per_staff AS (
     SELECT
-        p.staff_id,
-        SUM(p.amount) AS revenue_2017
-    FROM payments_2017 AS p
-    GROUP BY p.staff_id
+        payments_2017.staff_id,
+        SUM(payments_2017.amount) AS revenue_2017
+    FROM payments_2017
+    GROUP BY payments_2017.staff_id
 ),
 last_payment_per_staff AS (
     SELECT
-        p.staff_id,
-        MAX(p.payment_date) AS last_payment_date
-    FROM payments_2017 AS p
-    GROUP BY p.staff_id
+        payments_2017.staff_id,
+        MAX(payments_2017.payment_date) AS last_payment_date
+    FROM payments_2017
+    GROUP BY payments_2017.staff_id
 ),
 last_store_per_staff AS (
     SELECT
-        p.staff_id,
-        MIN(p.store_id) AS last_store_id,
-        MIN(p.store_address) AS last_store_address
-    FROM payments_2017 AS p
-    INNER JOIN last_payment_per_staff AS lp
-        ON p.staff_id = lp.staff_id
-       AND p.payment_date = lp.last_payment_date
-    GROUP BY p.staff_id
+        payments_2017.staff_id,
+        MIN(payments_2017.store_id) AS last_store_id,
+        MIN(payments_2017.store_address) AS last_store_address
+    FROM payments_2017
+    INNER JOIN last_payment_per_staff
+        ON payments_2017.staff_id = last_payment_per_staff.staff_id
+       AND payments_2017.payment_date = last_payment_per_staff.last_payment_date
+    GROUP BY payments_2017.staff_id
 )
 SELECT
-    s.first_name,
-    s.last_name,
-    rps.revenue_2017,
-    lss.last_store_id,
-    lss.last_store_address
-FROM public.staff AS s
-INNER JOIN revenue_per_staff AS rps
-    ON s.staff_id = rps.staff_id
-INNER JOIN last_store_per_staff AS lss
-    ON s.staff_id = lss.staff_id
+    staff.first_name,
+    staff.last_name,
+    revenue_per_staff.revenue_2017,
+    last_store_per_staff.last_store_id,
+    last_store_per_staff.last_store_address
+FROM public.staff AS staff
+INNER JOIN revenue_per_staff
+    ON staff.staff_id = revenue_per_staff.staff_id
+INNER JOIN last_store_per_staff
+    ON staff.staff_id = last_store_per_staff.staff_id
 ORDER BY
-    rps.revenue_2017 DESC,
-    s.last_name ASC,
-    s.first_name ASC
+    revenue_per_staff.revenue_2017 DESC,
+    staff.last_name ASC,
+    staff.first_name ASC
 LIMIT 3;
 
 -- ---------------------------------------------------------
@@ -872,30 +881,29 @@ My understanding:
 -- and count rentals for each film.
 -- ---------------------------------------------------------
 SELECT
-    f.title,
-    COUNT(r.rental_id) AS number_of_rentals,
+    film.title,
+    COUNT(rental.rental_id) AS number_of_rentals,
     CASE
-        WHEN f.rating = 'G' THEN 'All ages'
-        WHEN f.rating = 'PG' THEN 'Parental guidance suggested'
-        WHEN f.rating = 'PG-13' THEN '13+'
-        WHEN f.rating = 'R' THEN '17+'
-        WHEN f.rating = 'NC-17' THEN '18+'
+        WHEN film.rating = 'G' THEN 'All ages'
+        WHEN film.rating = 'PG' THEN 'Parental guidance suggested'
+        WHEN film.rating = 'PG-13' THEN '13+'
+        WHEN film.rating = 'R' THEN '17+'
+        WHEN film.rating = 'NC-17' THEN '18+'
         ELSE 'Unknown'
     END AS expected_age
-FROM public.film AS f
-INNER JOIN public.inventory AS i
-    ON f.film_id = i.film_id
-INNER JOIN public.rental AS r
-    ON i.inventory_id = r.inventory_id
+FROM public.film AS film
+INNER JOIN public.inventory AS inventory
+    ON film.film_id = inventory.film_id
+INNER JOIN public.rental AS rental
+    ON inventory.inventory_id = rental.inventory_id
 GROUP BY
-    f.film_id,
-    f.title,
-    f.rating
+    film.film_id,
+    film.title,
+    film.rating
 ORDER BY
     number_of_rentals DESC,
-    f.title ASC
+    film.title ASC
 LIMIT 5;
-
 
 -- ---------------------------------------------------------
 -- TASK 2 - SUBQUERY SOLUTION
@@ -903,30 +911,30 @@ LIMIT 5;
 -- and then I join that result back to the film table.
 -- ---------------------------------------------------------
 SELECT
-    f.title,
-    fr.number_of_rentals,
+    film.title,
+    film_rentals.number_of_rentals,
     CASE
-        WHEN f.rating = 'G' THEN 'All ages'
-        WHEN f.rating = 'PG' THEN 'Parental guidance suggested'
-        WHEN f.rating = 'PG-13' THEN '13+'
-        WHEN f.rating = 'R' THEN '17+'
-        WHEN f.rating = 'NC-17' THEN '18+'
+        WHEN film.rating = 'G' THEN 'All ages'
+        WHEN film.rating = 'PG' THEN 'Parental guidance suggested'
+        WHEN film.rating = 'PG-13' THEN '13+'
+        WHEN film.rating = 'R' THEN '17+'
+        WHEN film.rating = 'NC-17' THEN '18+'
         ELSE 'Unknown'
     END AS expected_age
-FROM public.film AS f
+FROM public.film AS film
 INNER JOIN (
     SELECT
-        i.film_id,
-        COUNT(r.rental_id) AS number_of_rentals
-    FROM public.inventory AS i
-    INNER JOIN public.rental AS r
-        ON i.inventory_id = r.inventory_id
-    GROUP BY i.film_id
-) AS fr
-    ON f.film_id = fr.film_id
+        inventory.film_id,
+        COUNT(rental.rental_id) AS number_of_rentals
+    FROM public.inventory AS inventory
+    INNER JOIN public.rental AS rental
+        ON inventory.inventory_id = rental.inventory_id
+    GROUP BY inventory.film_id
+) AS film_rentals
+    ON film.film_id = film_rentals.film_id
 ORDER BY
-    fr.number_of_rentals DESC,
-    f.title ASC
+    film_rentals.number_of_rentals DESC,
+    film.title ASC
 LIMIT 5;
 
 
@@ -937,32 +945,31 @@ LIMIT 5;
 -- ---------------------------------------------------------
 WITH film_rentals AS (
     SELECT
-        i.film_id,
-        COUNT(r.rental_id) AS number_of_rentals
-    FROM public.inventory AS i
-    INNER JOIN public.rental AS r
-        ON i.inventory_id = r.inventory_id
-    GROUP BY i.film_id
+        inventory.film_id,
+        COUNT(rental.rental_id) AS number_of_rentals
+    FROM public.inventory AS inventory
+    INNER JOIN public.rental AS rental
+        ON inventory.inventory_id = rental.inventory_id
+    GROUP BY inventory.film_id
 )
 SELECT
-    f.title,
-    fr.number_of_rentals,
+    film.title,
+    film_rentals.number_of_rentals,
     CASE
-        WHEN f.rating = 'G' THEN 'All ages'
-        WHEN f.rating = 'PG' THEN 'Parental guidance suggested'
-        WHEN f.rating = 'PG-13' THEN '13+'
-        WHEN f.rating = 'R' THEN '17+'
-        WHEN f.rating = 'NC-17' THEN '18+'
+        WHEN film.rating = 'G' THEN 'All ages'
+        WHEN film.rating = 'PG' THEN 'Parental guidance suggested'
+        WHEN film.rating = 'PG-13' THEN '13+'
+        WHEN film.rating = 'R' THEN '17+'
+        WHEN film.rating = 'NC-17' THEN '18+'
         ELSE 'Unknown'
     END AS expected_age
-FROM public.film AS f
-INNER JOIN film_rentals AS fr
-    ON f.film_id = fr.film_id
+FROM public.film AS film
+INNER JOIN film_rentals
+    ON film.film_id = film_rentals.film_id
 ORDER BY
-    fr.number_of_rentals DESC,
-    f.title ASC
+    film_rentals.number_of_rentals DESC,
+    film.title ASC
 LIMIT 5;
-
 -- ---------------------------------------------------------
 -- Advantages / disadvantages / production choice:
 -- ---------------------------------------------------------
@@ -1015,23 +1022,23 @@ My understanding:
 -- and calculate the gap to the current year.
 -- ---------------------------------------------------------
 SELECT
-    a.first_name,
-    a.last_name,
-    MAX(f.release_year) AS latest_release_year,
-    EXTRACT(YEAR FROM CURRENT_DATE) - MAX(f.release_year) AS inactivity_years
-FROM public.actor AS a
-INNER JOIN public.film_actor AS fa
-    ON a.actor_id = fa.actor_id
-INNER JOIN public.film AS f
-    ON fa.film_id = f.film_id
+    actor.first_name,
+    actor.last_name,
+    MAX(film.release_year) AS latest_release_year,
+    EXTRACT(YEAR FROM CURRENT_DATE) - MAX(film.release_year) AS inactivity_years
+FROM public.actor AS actor
+INNER JOIN public.film_actor AS film_actor
+    ON actor.actor_id = film_actor.actor_id
+INNER JOIN public.film AS film
+    ON film_actor.film_id = film.film_id
 GROUP BY
-    a.actor_id,
-    a.first_name,
-    a.last_name
+    actor.actor_id,
+    actor.first_name,
+    actor.last_name
 ORDER BY
     inactivity_years DESC,
-    a.last_name ASC,
-    a.first_name ASC;
+    actor.last_name ASC,
+    actor.first_name ASC;
 
 
 -- ---------------------------------------------------------
@@ -1040,31 +1047,30 @@ ORDER BY
 -- in a subquery, and then I calculate inactivity in the outer query.
 -- ---------------------------------------------------------
 SELECT
-    t.first_name,
-    t.last_name,
-    t.latest_release_year,
-    EXTRACT(YEAR FROM CURRENT_DATE) - t.latest_release_year AS inactivity_years
+    actor_latest_year.first_name,
+    actor_latest_year.last_name,
+    actor_latest_year.latest_release_year,
+    EXTRACT(YEAR FROM CURRENT_DATE) - actor_latest_year.latest_release_year AS inactivity_years
 FROM (
     SELECT
-        a.actor_id,
-        a.first_name,
-        a.last_name,
-        MAX(f.release_year) AS latest_release_year
-    FROM public.actor AS a
-    INNER JOIN public.film_actor AS fa
-        ON a.actor_id = fa.actor_id
-    INNER JOIN public.film AS f
-        ON fa.film_id = f.film_id
+        actor.actor_id,
+        actor.first_name,
+        actor.last_name,
+        MAX(film.release_year) AS latest_release_year
+    FROM public.actor AS actor
+    INNER JOIN public.film_actor AS film_actor
+        ON actor.actor_id = film_actor.actor_id
+    INNER JOIN public.film AS film
+        ON film_actor.film_id = film.film_id
     GROUP BY
-        a.actor_id,
-        a.first_name,
-        a.last_name
-) AS t
+        actor.actor_id,
+        actor.first_name,
+        actor.last_name
+) AS actor_latest_year
 ORDER BY
     inactivity_years DESC,
-    t.last_name ASC,
-    t.first_name ASC;
-
+    actor_latest_year.last_name ASC,
+    actor_latest_year.first_name ASC;
 
 -- ---------------------------------------------------------
 -- V1 - CTE SOLUTION
@@ -1073,31 +1079,30 @@ ORDER BY
 -- ---------------------------------------------------------
 WITH latest_actor_year AS (
     SELECT
-        a.actor_id,
-        a.first_name,
-        a.last_name,
-        MAX(f.release_year) AS latest_release_year
-    FROM public.actor AS a
-    INNER JOIN public.film_actor AS fa
-        ON a.actor_id = fa.actor_id
-    INNER JOIN public.film AS f
-        ON fa.film_id = f.film_id
+        actor.actor_id,
+        actor.first_name,
+        actor.last_name,
+        MAX(film.release_year) AS latest_release_year
+    FROM public.actor AS actor
+    INNER JOIN public.film_actor AS film_actor
+        ON actor.actor_id = film_actor.actor_id
+    INNER JOIN public.film AS film
+        ON film_actor.film_id = film.film_id
     GROUP BY
-        a.actor_id,
-        a.first_name,
-        a.last_name
+        actor.actor_id,
+        actor.first_name,
+        actor.last_name
 )
 SELECT
-    lay.first_name,
-    lay.last_name,
-    lay.latest_release_year,
-    EXTRACT(YEAR FROM CURRENT_DATE) - lay.latest_release_year AS inactivity_years
-FROM latest_actor_year AS lay
+    latest_actor_year.first_name,
+    latest_actor_year.last_name,
+    latest_actor_year.latest_release_year,
+    EXTRACT(YEAR FROM CURRENT_DATE) - latest_actor_year.latest_release_year AS inactivity_years
+FROM latest_actor_year
 ORDER BY
     inactivity_years DESC,
-    lay.last_name ASC,
-    lay.first_name ASC;
-
+    latest_actor_year.last_name ASC,
+    latest_actor_year.first_name ASC;
 -- ---------------------------------------------------------
 -- Advantages / disadvantages / production choice:
 -- ---------------------------------------------------------
@@ -1157,57 +1162,58 @@ Important note:
 -- the nearest next year.
 -- ---------------------------------------------------------
 SELECT
-    ay1.first_name,
-    ay1.last_name,
-    MAX(ay2.release_year - ay1.release_year) AS max_gap_years
+    actor_year_start.first_name,
+    actor_year_start.last_name,
+    MAX(actor_year_next.release_year - actor_year_start.release_year) AS max_gap_years
 FROM (
     SELECT DISTINCT
-        a.actor_id,
-        a.first_name,
-        a.last_name,
-        f.release_year
-    FROM public.actor AS a
-    INNER JOIN public.film_actor AS fa
-        ON a.actor_id = fa.actor_id
-    INNER JOIN public.film AS f
-        ON fa.film_id = f.film_id
-) AS ay1
+        actor.actor_id,
+        actor.first_name,
+        actor.last_name,
+        film.release_year
+    FROM public.actor AS actor
+    INNER JOIN public.film_actor AS film_actor
+        ON actor.actor_id = film_actor.actor_id
+    INNER JOIN public.film AS film
+        ON film_actor.film_id = film.film_id
+) AS actor_year_start
 INNER JOIN (
     SELECT DISTINCT
-        a.actor_id,
-        a.first_name,
-        a.last_name,
-        f.release_year
-    FROM public.actor AS a
-    INNER JOIN public.film_actor AS fa
-        ON a.actor_id = fa.actor_id
-    INNER JOIN public.film AS f
-        ON fa.film_id = f.film_id
-) AS ay2
-    ON ay1.actor_id = ay2.actor_id
-   AND ay2.release_year > ay1.release_year
+        actor.actor_id,
+        actor.first_name,
+        actor.last_name,
+        film.release_year
+    FROM public.actor AS actor
+    INNER JOIN public.film_actor AS film_actor
+        ON actor.actor_id = film_actor.actor_id
+    INNER JOIN public.film AS film
+        ON film_actor.film_id = film.film_id
+) AS actor_year_next
+    ON actor_year_start.actor_id = actor_year_next.actor_id
+   AND actor_year_next.release_year > actor_year_start.release_year
 LEFT JOIN (
     SELECT DISTINCT
-        a.actor_id,
-        f.release_year
-    FROM public.actor AS a
-    INNER JOIN public.film_actor AS fa
-        ON a.actor_id = fa.actor_id
-    INNER JOIN public.film AS f
-        ON fa.film_id = f.film_id
-) AS ay3
-    ON ay1.actor_id = ay3.actor_id
-   AND ay3.release_year > ay1.release_year
-   AND ay3.release_year < ay2.release_year
-WHERE ay3.actor_id IS NULL
+        actor.actor_id,
+        film.release_year
+    FROM public.actor AS actor
+    INNER JOIN public.film_actor AS film_actor
+        ON actor.actor_id = film_actor.actor_id
+    INNER JOIN public.film AS film
+        ON film_actor.film_id = film.film_id
+) AS actor_year_between
+    ON actor_year_start.actor_id = actor_year_between.actor_id
+   AND actor_year_between.release_year > actor_year_start.release_year
+   AND actor_year_between.release_year < actor_year_next.release_year
+WHERE actor_year_between.actor_id IS NULL
 GROUP BY
-    ay1.actor_id,
-    ay1.first_name,
-    ay1.last_name
+    actor_year_start.actor_id,
+    actor_year_start.first_name,
+    actor_year_start.last_name
 ORDER BY
     max_gap_years DESC,
-    ay1.last_name ASC,
-    ay1.first_name ASC;
+    actor_year_start.last_name ASC,
+    actor_year_start.first_name ASC;
+
 
 
 -- ---------------------------------------------------------
@@ -1217,50 +1223,48 @@ ORDER BY
 -- and then I calculate the biggest gap per actor.
 -- ---------------------------------------------------------
 SELECT
-    t.first_name,
-    t.last_name,
-    MAX(t.next_release_year - t.release_year) AS max_gap_years
+    actor_year_gaps.first_name,
+    actor_year_gaps.last_name,
+    MAX(actor_year_gaps.next_release_year - actor_year_gaps.release_year) AS max_gap_years
 FROM (
     SELECT
-        a.actor_id,
-        a.first_name,
-        a.last_name,
-        y.release_year,
+        actor.actor_id,
+        actor.first_name,
+        actor.last_name,
+        actor_years.release_year,
         (
-            SELECT MIN(y2.release_year)
+            SELECT MIN(next_actor_year.release_year)
             FROM (
                 SELECT DISTINCT
-                    fa2.actor_id,
-                    f2.release_year
-                FROM public.film_actor AS fa2
-                INNER JOIN public.film AS f2
-                    ON fa2.film_id = f2.film_id
-            ) AS y2
-            WHERE y2.actor_id = a.actor_id
-              AND y2.release_year > y.release_year
+                    film_actor_inner.actor_id,
+                    film_inner.release_year
+                FROM public.film_actor AS film_actor_inner
+                INNER JOIN public.film AS film_inner
+                    ON film_actor_inner.film_id = film_inner.film_id
+            ) AS next_actor_year
+            WHERE next_actor_year.actor_id = actor.actor_id
+              AND next_actor_year.release_year > actor_years.release_year
         ) AS next_release_year
-    FROM public.actor AS a
+    FROM public.actor AS actor
     INNER JOIN (
         SELECT DISTINCT
-            fa.actor_id,
-            f.release_year
-        FROM public.film_actor AS fa
-        INNER JOIN public.film AS f
-            ON fa.film_id = f.film_id
-    ) AS y
-        ON a.actor_id = y.actor_id
-) AS t
-WHERE t.next_release_year IS NOT NULL
+            film_actor.actor_id,
+            film.release_year
+        FROM public.film_actor AS film_actor
+        INNER JOIN public.film AS film
+            ON film_actor.film_id = film.film_id
+    ) AS actor_years
+        ON actor.actor_id = actor_years.actor_id
+) AS actor_year_gaps
+WHERE actor_year_gaps.next_release_year IS NOT NULL
 GROUP BY
-    t.actor_id,
-    t.first_name,
-    t.last_name
+    actor_year_gaps.actor_id,
+    actor_year_gaps.first_name,
+    actor_year_gaps.last_name
 ORDER BY
     max_gap_years DESC,
-    t.last_name ASC,
-    t.first_name ASC;
-
-
+    actor_year_gaps.last_name ASC,
+    actor_year_gaps.first_name ASC;
 -- ---------------------------------------------------------
 -- V2 - CTE SOLUTION
 -- Here I split the logic into steps:
@@ -1270,52 +1274,52 @@ ORDER BY
 -- ---------------------------------------------------------
 WITH actor_years AS (
     SELECT DISTINCT
-        a.actor_id,
-        a.first_name,
-        a.last_name,
-        f.release_year
-    FROM public.actor AS a
-    INNER JOIN public.film_actor AS fa
-        ON a.actor_id = fa.actor_id
-    INNER JOIN public.film AS f
-        ON fa.film_id = f.film_id
+        actor.actor_id,
+        actor.first_name,
+        actor.last_name,
+        film.release_year
+    FROM public.actor AS actor
+    INNER JOIN public.film_actor AS film_actor
+        ON actor.actor_id = film_actor.actor_id
+    INNER JOIN public.film AS film
+        ON film_actor.film_id = film.film_id
 ),
 next_years AS (
     SELECT
-        ay.actor_id,
-        ay.first_name,
-        ay.last_name,
-        ay.release_year,
+        actor_years.actor_id,
+        actor_years.first_name,
+        actor_years.last_name,
+        actor_years.release_year,
         (
-            SELECT MIN(ay2.release_year)
-            FROM actor_years AS ay2
-            WHERE ay2.actor_id = ay.actor_id
-              AND ay2.release_year > ay.release_year
+            SELECT MIN(actor_years_next.release_year)
+            FROM actor_years AS actor_years_next
+            WHERE actor_years_next.actor_id = actor_years.actor_id
+              AND actor_years_next.release_year > actor_years.release_year
         ) AS next_release_year
-    FROM actor_years AS ay
+    FROM actor_years
 ),
 gaps AS (
     SELECT
-        ny.actor_id,
-        ny.first_name,
-        ny.last_name,
-        ny.next_release_year - ny.release_year AS gap_years
-    FROM next_years AS ny
-    WHERE ny.next_release_year IS NOT NULL
+        next_years.actor_id,
+        next_years.first_name,
+        next_years.last_name,
+        next_years.next_release_year - next_years.release_year AS gap_years
+    FROM next_years
+    WHERE next_years.next_release_year IS NOT NULL
 )
 SELECT
-    g.first_name,
-    g.last_name,
-    MAX(g.gap_years) AS max_gap_years
-FROM gaps AS g
+    gaps.first_name,
+    gaps.last_name,
+    MAX(gaps.gap_years) AS max_gap_years
+FROM gaps
 GROUP BY
-    g.actor_id,
-    g.first_name,
-    g.last_name
+    gaps.actor_id,
+    gaps.first_name,
+    gaps.last_name
 ORDER BY
     max_gap_years DESC,
-    g.last_name ASC,
-    g.first_name ASC;
+    gaps.last_name ASC,
+    gaps.first_name ASC;
 
 -- ---------------------------------------------------------
 -- Advantages / disadvantages / production choice:
