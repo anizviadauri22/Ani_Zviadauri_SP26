@@ -8,21 +8,27 @@
 --   staff roles, manufacturers) is moved to separate lookup tables and
 --   referenced via foreign keys.
 
--- NOTE ON DATABASE CREATION:
--- I created the database 'healthcare_clinic_db' manually in DBeaver before
--- executing this script.
--- I did not include CREATE DATABASE and \connect commands in this script
--- because they are not portable across all SQL clients (e.g., DBeaver does not
--- support \connect).
--- This script is intended to be executed while connected to
--- healthcare_clinic_db.
-
-
 -- NOTE ON RERUNNABILITY:
 -- I made this script rerunnable by dropping and recreating the schema
 -- healthcare_clinic using CASCADE. This removes existing objects and ensures
 -- a clean state on each run. INSERT statements use WHERE NOT EXISTS to
 -- prevent duplicate data.
+-- =============================================================================
+ 
+
+-- STEP 1: CREATE DATABASE (run separately)
+-- =============================================================================
+-- This statement creates the project database.
+-- It must be executed separately before running the rest of the script,
+-- because PostgreSQL does not allow switching databases within standard SQL.
+
+CREATE DATABASE healthcare_clinic_db;
+
+-- =============================================================================
+-- NOTE ON DATABASE EXECUTION:
+-- After creating the database, I manually switched the connection
+-- to 'healthcare_clinic_db' (e.g., in DBeaver) before executing the
+-- remaining script.
 -- =============================================================================
 
 
