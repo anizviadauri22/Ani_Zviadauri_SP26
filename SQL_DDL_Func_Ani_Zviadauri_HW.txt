@@ -1,454 +1,338 @@
 Task 6 — Analysis of existing functions in dvdrental
- 
- 
+
+
 =============================================================
 1. What do these functions actually do?
 =============================================================
- 
+
 -------------------------------------------------------------
 film_in_stock
 -------------------------------------------------------------
-Takes a film_id and a store_id.
-Loops through every inventory row where inventory.film_id and
-inventory.store_id match the inputs.
-For each inventory_id in that set, it calls inventory_in_stock(inventory_id).
-If inventory_in_stock returns true, that inventory_id is included in the result.
- 
-So the function returns a set of inventory IDs — the physical copies
-of that film currently available on the shelf in that specific store.
-It does not return a boolean and it does not return the film itself.
- 
-The loop is procedural (FOR ... LOOP) rather than a single set-based
-query, which means it calls inventory_in_stock() once per row rather
-than processing everything in one pass. Logically correct, but not
-the most efficient approach.
- 
- 
+In this function, I pass film_id and store_id as input.
+
+I loop through all inventory rows where inventory.film_id and
+inventory.store_id match the input values.
+
+For each inventory_id, I call inventory_in_stock(inventory_id).
+
+If inventory_in_stock returns true, I include that inventory_id
+in the result.
+
+So, this function returns inventory IDs, meaning the physical
+copies of the film that are currently available in that store.
+
+It does not return a boolean and it does not return film details.
+
+I also notice that this function is written with a loop, so it
+works row by row. The logic is correct, but it is not the most
+efficient way to solve the problem.
+
+
 -------------------------------------------------------------
 film_not_in_stock
 -------------------------------------------------------------
-Structurally identical to film_in_stock.
-Same inputs, same loop, same call to inventory_in_stock per row —
-but it returns inventory IDs where inventory_in_stock returned false
-instead of true.
- 
-So this is the direct inverse: it tells you which copies of the film
-are currently rented out.
- 
-The problem is that the two functions share nearly all their code
-and differ only in one boolean condition. That is a clear case of
-code duplication — see section 3 for the recommendation.
- 
- 
+This function is almost the same as film_in_stock.
+
+I again pass film_id and store_id, loop through matching inventory
+rows, and call inventory_in_stock for each one.
+
+The difference is that here I return inventory IDs where
+inventory_in_stock returns false.
+
+So, this function returns copies of the film that are currently
+rented out.
+
+I can see that this creates duplicated logic, because both
+functions are almost identical and differ only in one condition.
+
+
 -------------------------------------------------------------
 inventory_in_stock
 -------------------------------------------------------------
-Takes a single inventory_id and answers one question: is this specific
-copy currently available to rent?
- 
-The logic checks for open rentals:
-  - If no open rental exists for this inventory copy, it returns true.
-  - If an open rental exists (a row where return_date IS NULL), it returns false.
- 
-That is the complete logic. A copy is in stock if and only if it has
-no open rental. This is the core function that film_in_stock and
-film_not_in_stock both depend on.
- 
- 
+In this function, I pass one inventory_id.
+
+I check whether there is an open rental for that inventory item,
+which means a rental row where return_date IS NULL.
+
+If there is no open rental, the function returns true.
+
+If there is an open rental, the function returns false.
+
+So, this function decides whether a specific copy is available
+for rent.
+
+This is the core function used by other stock-related functions.
+
+
 -------------------------------------------------------------
 get_customer_balance
 -------------------------------------------------------------
-Takes a customer_id and an effective_date.
-Calculates the balance as:
- 
-  balance = rental fees + overdue fees - payments made
- 
-Rental fees:
-  Sums film.rental_rate for every rental made by that customer
-  up to the effective date.
- 
-Overdue fees:
-  For each rental, compares how long the customer actually kept the
-  film against the allowed film.rental_duration. If the customer kept
-  it longer, additional charges are added.
- 
-Payments:
-  Sums payment.amount for all payments made up to the effective date.
- 
-The problem is in the overdue calculation. The original code only
-handles rentals that have already been returned (it filters on
-return_date IS NOT NULL). If a rental is still open and has been
-outstanding past its due date, those overdue charges are silently
-skipped. The comments inside the function describe the correct
-behavior, but the code does not implement it. This means the balance
-returned can be lower than what the customer actually owes.
-See the corrected version in section 5.
- 
- 
+In this function, I pass customer_id and effective_date.
+
+I calculate the balance like this:
+
+balance = rental fees + overdue fees - payments
+
+First, I sum rental fees using film.rental_rate.
+
+Then I calculate overdue fees by comparing how long the customer
+kept the rental with the allowed rental_duration.
+
+After that, I subtract all payments made up to the effective date.
+
+The main problem is that the original function only calculates
+overdue fees for rentals that were already returned.
+
+If a rental is still open and already overdue, the function skips it.
+
+Because of that, the returned balance can be lower than the real one.
+
+
 -------------------------------------------------------------
 inventory_held_by_customer
 -------------------------------------------------------------
-Takes an inventory_id.
-Searches for a rental row where:
-  - inventory_id matches
-  - return_date IS NULL (the item has not been returned yet)
- 
-If found, returns the customer_id of whoever has it.
-If not found, returns NULL.
- 
-Simple and correct. It identifies who currently holds a specific copy.
- 
- 
+In this function, I pass inventory_id.
+
+I look for a rental row where inventory_id matches and
+return_date IS NULL.
+
+If I find such a row, I return the customer_id.
+
+If I do not find it, I return NULL.
+
+So, this function tells me who currently has that inventory item.
+
+
 -------------------------------------------------------------
 rewards_report
 -------------------------------------------------------------
-Takes two thresholds: a minimum number of monthly purchases and a
-minimum monthly spend amount.
-Tries to find customers who met both thresholds during the previous
-calendar month.
- 
-How it works step by step:
-  1. Calculates the first day of last month using CURRENT_DATE.
-  2. Calculates the last day of last month using the last_day() helper.
-  3. Builds a SQL string in a variable called tmpSQL by concatenating
-     the threshold values into the WHERE clause.
-  4. Runs that string with EXECUTE, which inserts qualifying customer
-     IDs into a temporary table called tmpCustomer.
-  5. Joins the temp table back to public.customer and returns the rows.
- 
-Why it is operationally unsuitable for the sample database as delivered:
-  The sample dvdrental data has payment records from 2005 to 2007.
-  The function always calculates "last month" relative to today's date.
-  There are no payment rows in that window, so the INSERT into the
-  temp table produces nothing, and the function returns 0 rows.
-  The date arithmetic itself is correct — the problem is that it is
-  anchored to a live system clock while the data is frozen in the past.
-  See the corrected version in section 2.
- 
- 
+In this function, I pass two thresholds:
+minimum monthly purchases and minimum monthly amount spent.
+
+The function tries to find customers who met both conditions
+during the previous month.
+
+The steps are:
+
+1. I calculate the first day of last month using CURRENT_DATE.
+2. I calculate the last day of last month using last_day().
+3. I build a SQL string inside tmpSQL.
+4. I run that SQL string with EXECUTE.
+5. I insert qualifying customer IDs into a temporary table.
+6. I return matching customers.
+
+The main problem is that the sample dvdrental data is old,
+but the function uses today’s date.
+
+Because of that, the function looks at a month where there is
+no payment data, so it returns 0 rows.
+
+
 -------------------------------------------------------------
 last_day
 -------------------------------------------------------------
-A small helper function. Takes any date and returns the last calendar
-day of that month.
- 
-The typical implementation moves to the first day of the next month
-and subtracts one day. Passing 2007-02-10 gives 2007-02-28.
-Used internally by rewards_report to compute the end-of-month boundary.
- 
- 
+This is a helper function.
+
+I pass a date, and the function returns the last day of that month.
+
+The usual logic is to move to the first day of the next month
+and then subtract one day.
+
+For example, if I pass 2007-02-10, the function returns 2007-02-28.
+
+
 =============================================================
 2. Why rewards_report returns 0 rows, and how to fix it
 =============================================================
- 
-The root cause is the combination of:
-  - CURRENT_DATE used to define the "last month" window
-  - Payment data that only exists between 2005 and 2007
- 
-Last month relative to today contains zero payment rows, so the
-temp table is always empty and the function always returns nothing.
- 
-Two additional problems make the function harder to maintain than
-it needs to be:
- 
-  1. tmpSQL and EXECUTE are unnecessary. The SQL string that gets
-     built inside tmpSQL is completely static — it has the same
-     structure every time and only the threshold values change.
-     EXECUTE is meant for cases where the query structure itself
-     changes at runtime (dynamic table names, dynamic column lists).
-     Using it here just adds complexity and prevents the query
-     planner from caching an execution plan.
- 
-  2. The temporary table is also unnecessary. The same result can
-     be produced with a plain subquery, which is simpler and avoids
-     the overhead of creating and dropping a temp table.
- 
-The fix: replace CURRENT_DATE with a reference to the actual data.
-Finding the most recent payment month in the table and treating that
-as "last month" makes the function work correctly regardless of when
-it is run.
- 
-------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.rewards_report(
-    p_min_monthly_purchases     INTEGER,
-    p_min_dollar_amount         NUMERIC
-)
-RETURNS SETOF public.customer
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-DECLARE
-    v_last_month_start DATE;
-    v_last_month_end   DATE;
-BEGIN
-    IF p_min_monthly_purchases = 0 THEN
-        RAISE EXCEPTION 'Minimum monthly purchases must be greater than zero';
-    END IF;
- 
-    IF p_min_dollar_amount = 0.00 THEN
-        RAISE EXCEPTION 'Minimum dollar amount must be greater than zero';
-    END IF;
- 
-    -- Anchor to the most recent month that actually has payment data
-    -- instead of using CURRENT_DATE. This makes the function work
-    -- correctly against the sample database.
-    SELECT
-        date_trunc('month', MAX(payment_date))::date,
-        last_day(MAX(payment_date)::date)
-    INTO v_last_month_start, v_last_month_end
-    FROM public.payment;
- 
-    -- Return customers who met both thresholds in that month.
-    -- No dynamic SQL, no temp table — plain RETURN QUERY is enough.
-    RETURN QUERY
-    SELECT cust.*
-    FROM public.customer AS cust
-    WHERE cust.customer_id IN (
-        SELECT pay.customer_id
-        FROM public.payment AS pay
-        WHERE pay.payment_date >= v_last_month_start
-          AND pay.payment_date <= v_last_month_end
-        GROUP BY pay.customer_id
-        HAVING COUNT(pay.payment_id) >= p_min_monthly_purchases
-           AND SUM(pay.amount)       >= p_min_dollar_amount
-    );
-END;
-$$;
-------------------------------------------------------------------------
- 
- 
+
+The reason is simple.
+
+The function uses CURRENT_DATE to define “last month”, but the
+dvdrental payment data only exists in historical years.
+
+So when the function checks last month relative to today,
+there are no payment rows in that period.
+
+That is why the temporary table stays empty and the function
+returns nothing.
+
+I also see two design problems here.
+
+First, tmpSQL and EXECUTE are unnecessary, because the query
+structure does not actually change.
+
+Second, the temporary table is also unnecessary, because the same
+result can be returned directly with a normal query.
+
+To fix the function, I replace CURRENT_DATE with the latest
+payment month that actually exists in the table.
+
+That way, the function works with the sample data no matter
+when I run it.
+
+
 =============================================================
 3. Which function could be removed?
 =============================================================
- 
-film_not_in_stock is the strongest candidate for removal.
- 
-It duplicates the entire logic of film_in_stock. The only difference
-between the two functions is whether they include rows where
-inventory_in_stock() is true or false. Any caller who already has
-film_in_stock can get the unavailable copies with a simple query:
- 
-  SELECT inv.inventory_id
-  FROM public.inventory AS inv
-  WHERE inv.film_id  = <film_id>
-    AND inv.store_id = <store_id>
-    AND NOT public.inventory_in_stock(inv.inventory_id);
- 
-Keeping film_not_in_stock means that any future change to the stock
-logic needs to be applied in two places. That is the exact kind of
-maintenance risk that removing the function would prevent.
- 
-group_concat is also a candidate. PostgreSQL has the built-in aggregate
-string_agg(expression, delimiter) which does the same job and also
-supports ORDER BY inside the aggregate. group_concat only exists in
-the dvdrental schema to replicate MySQL behavior and is not needed in
-any PostgreSQL-native code.
- 
- 
+
+The strongest candidate for removal is film_not_in_stock.
+
+I say this because it repeats almost the same logic as
+film_in_stock.
+
+The only real difference is whether inventory_in_stock is true
+or false.
+
+So instead of keeping a separate function, I could just use
+NOT inventory_in_stock(...) in a query.
+
+I also think group_concat is not really necessary in PostgreSQL,
+because string_agg already exists and does the same job better.
+
+
 =============================================================
 4. Which functions violate best practices?
 =============================================================
- 
+
 rewards_report:
-  - Uses EXECUTE with a completely static SQL string. The query
-    structure never changes — only the parameter values do — so
-    dynamic SQL adds no value and prevents plan caching.
-  - Uses a temporary table when a subquery would be cleaner and faster.
-  - Tied to CURRENT_DATE, making it operationally useless against
-    historical data without modification.
- 
+I think this function violates best practices because it uses
+dynamic SQL even though the query structure is fixed.
+
+It also uses a temporary table when a normal query would be enough.
+
+And it depends on CURRENT_DATE, which makes it unsuitable for
+historical sample data.
+
 get_customer_balance:
-  - Does not implement the full overdue logic described in its own
-    comments. Specifically, it ignores rentals that are still open
-    and past due, which causes the function to understate the balance
-    for customers who have late unreturned items.
- 
+This function does not fully implement the overdue logic described
+in its own comments, because it ignores overdue rentals that are
+still open.
+
 film_in_stock and film_not_in_stock:
-  - Both use procedural FOR loops that call inventory_in_stock() once
-    per inventory row. A set-based JOIN or EXISTS check would process
-    all rows in a single pass and scale much better on large data.
-  - The duplication between the two functions also means any logic
-    change has to be made twice.
- 
- 
+These functions use procedural loops instead of set-based logic.
+
+They also duplicate code, which makes maintenance harder.
+
+
 =============================================================
 5. Corrected get_customer_balance
 =============================================================
- 
-The original function only calculates overdue fees for rentals where
-return_date IS NOT NULL. Rentals that are still open (return_date IS NULL)
-are excluded from the overdue calculation entirely.
- 
-The function's own comments say that open rentals which are past due
-should still generate overdue charges. The fix is to substitute the
-effective date wherever return_date is NULL, so that ongoing late
-rentals are included in the calculation.
- 
-------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.get_customer_balance(
-    p_customer_id    INTEGER,
-    p_effective_date TIMESTAMP WITH TIME ZONE
-)
-RETURNS NUMERIC
-LANGUAGE plpgsql
-AS $$
-DECLARE
-    v_rental_fees   NUMERIC(5, 2) := 0;
-    v_overdue_fees  NUMERIC(5, 2) := 0;
-    v_payments      NUMERIC(5, 2) := 0;
-BEGIN
-    -- Sum the base rental rate for every rental up to the effective date
-    SELECT COALESCE(SUM(flm.rental_rate), 0)
-    INTO v_rental_fees
-    FROM public.rental    AS ren
-    JOIN public.inventory AS inv ON inv.inventory_id = ren.inventory_id
-    JOIN public.film      AS flm ON flm.film_id      = inv.film_id
-    WHERE ren.customer_id = p_customer_id
-      AND ren.rental_date <= p_effective_date;
- 
-    -- Calculate overdue charges.
-    -- For returned rentals, use the actual return date.
-    -- For still-open rentals, use the effective date as the end point.
-    -- This is the part the original function was missing — open late
-    -- rentals were simply not counted.
-    SELECT COALESCE(SUM(
-        CASE
-            WHEN (COALESCE(ren.return_date, p_effective_date) - ren.rental_date)
-                 > (flm.rental_duration * INTERVAL '1 day')
-            THEN
-                EXTRACT(DAY FROM
-                    (COALESCE(ren.return_date, p_effective_date) - ren.rental_date)
-                    - (flm.rental_duration * INTERVAL '1 day')
-                ) * flm.rental_rate
-            ELSE 0
-        END
-    ), 0)
-    INTO v_overdue_fees
-    FROM public.rental    AS ren
-    JOIN public.inventory AS inv ON inv.inventory_id = ren.inventory_id
-    JOIN public.film      AS flm ON flm.film_id      = inv.film_id
-    WHERE ren.customer_id = p_customer_id
-      AND ren.rental_date <= p_effective_date;
- 
-    -- Sum all payments up to the effective date
-    SELECT COALESCE(SUM(pay.amount), 0)
-    INTO v_payments
-    FROM public.payment AS pay
-    WHERE pay.customer_id   = p_customer_id
-      AND pay.payment_date <= p_effective_date;
- 
-    RETURN v_rental_fees + v_overdue_fees - v_payments;
-END;
-$$;
-------------------------------------------------------------------------
- 
-Key change: COALESCE(ren.return_date, p_effective_date) replaces the
-plain ren.return_date used in the original. When return_date is NULL
-(the item is still rented), the effective date is used as the end
-point for calculating how long the rental has been outstanding. In the
-original code those rows were filtered out entirely, so customers with
-late unreturned items had a lower balance reported than they actually owed.
- 
- 
+
+The main problem in the original function is that overdue fees
+are only calculated for returned rentals.
+
+If return_date IS NULL, the row is skipped.
+
+To fix this, I use:
+
+COALESCE(return_date, effective_date)
+
+This means:
+- if the rental was returned, I use the real return date
+- if it was not returned, I use the effective date instead
+
+This way, overdue open rentals are also included in the balance.
+
+
 =============================================================
 6. How group_concat and _group_concat work
 =============================================================
- 
-_group_concat is the state transition function. It takes two arguments:
-the accumulated text so far and one new text value. It concatenates
-them with a comma and returns the result. If either side is NULL it
-handles that gracefully rather than producing NULL for the whole result.
- 
-group_concat is the aggregate wrapper that applies _group_concat
-across all rows in a group. Defined roughly as:
- 
-  CREATE AGGREGATE group_concat(text) (
-      SFUNC = _group_concat,
-      STYPE = text
-  );
- 
-So across a set of rows containing 'a', 'b', 'c', calling
-group_concat(col) produces 'a,b,c'.
- 
-Where they are used:
-  In the dvdrental creation script they appear in queries that build
-  comma-separated lists of actor names or film titles.
- 
-Why they are redundant:
-  PostgreSQL has the built-in aggregate string_agg(expression, delimiter)
-  which does exactly the same thing and additionally supports ORDER BY
-  inside the aggregate. group_concat has no defined ordering, so the
-  concatenation order depends on the query plan and can vary between
-  runs. string_agg is the better replacement in all cases.
- 
- 
+
+_group_concat is the helper function.
+
+It takes the current accumulated text and one new text value,
+and joins them together with a comma.
+
+group_concat is the aggregate wrapper.
+
+It applies _group_concat over multiple rows.
+
+For example:
+'a', 'b', 'c' becomes 'a,b,c'
+
+These functions are used when multiple values need to be combined
+into one comma-separated string.
+
+The issue is that there is no ORDER BY inside this logic,
+so the order of concatenation is not guaranteed.
+
+In PostgreSQL, string_agg is a better alternative.
+
+
 =============================================================
 7. What does last_updated do and where is it used?
 =============================================================
- 
-last_updated is a trigger function. Its entire body does one thing:
- 
-  NEW.last_update = CURRENT_TIMESTAMP;
-  RETURN NEW;
- 
-It stamps the current timestamp onto the row being modified before
-the update is written to disk.
- 
-It is attached as a BEFORE UPDATE trigger on several tables: film,
-actor, address, category, city, country, customer, inventory, language,
-rental, staff, and store. Any UPDATE on those tables fires the trigger
-automatically, so the last_update column is always kept current without
-the application needing to manage it explicitly.
- 
- 
+
+last_updated is a trigger function.
+
+Its job is to set:
+
+NEW.last_update = CURRENT_TIMESTAMP
+
+before an updated row is written.
+
+So whenever a row is updated, the timestamp is refreshed automatically.
+
+This trigger is attached to several dvdrental tables such as
+film, actor, customer, inventory, rental, and others.
+
+Because of that, the application does not need to manually
+update the last_update column.
+
+
 =============================================================
 8. What is tmpSQL for, and can rewards_report be rewritten without it?
 =============================================================
- 
-tmpSQL is a TEXT variable that holds a dynamically built SQL string.
-In rewards_report the thresholds (min_monthly_purchases and
-min_dollar_amount_purchased) are concatenated directly into the string,
-which is then executed with EXECUTE.
- 
-The reason this was written this way is likely habit from environments
-where dynamic SQL is the only way to parameterize certain constructs.
-But in this function the query structure never changes — only the
-comparison values differ, and those can be passed as normal function
-parameters in a static query.
- 
-Yes, the function can absolutely be rewritten without EXECUTE, and
-the corrected version in section 2 does exactly that. RETURN QUERY
-with a plain subquery is simpler, safer (no string concatenation near
-user-supplied values), and allows the query planner to cache the plan.
- 
- 
+
+tmpSQL is a text variable that stores a SQL string.
+
+That SQL string is later executed using EXECUTE.
+
+In rewards_report, tmpSQL is used to build the customer-selection query.
+
+But in my opinion, it is not needed here, because the query
+structure does not change.
+
+Only the threshold values change, and those can be passed directly
+as normal parameters.
+
+So yes, the function can definitely be rewritten without EXECUTE.
+
+That is exactly what I do in the corrected version.
+
+
 =============================================================
 9. Which functions can produce incorrect results?
 =============================================================
- 
-get_customer_balance — most likely to produce wrong numbers.
-  The overdue fee calculation excludes all open rentals because it
-  relies on return_date, which is NULL for anything still rented.
-  Those rows are silently skipped. A customer who still has a film
-  and is past the due date will have a lower balance reported than
-  they actually owe. The error grows the longer the rental stays open.
- 
-rewards_report — always produces wrong results against the sample data.
-  Because it uses CURRENT_DATE to define "last month" and the data
-  only goes up to 2007, the date window always contains zero rows.
-  The function is not miscalculating — it is just looking at a time
-  period where no data exists. The result is always 0 rows regardless
-  of the thresholds passed.
- 
-group_concat — can produce inconsistent ordering.
-  Because no ORDER BY is defined inside the aggregate, the order in
-  which values are concatenated depends on the execution plan. The
-  same query can return 'a,b,c' on one run and 'b,a,c' on another
-  if the plan changes. This is not an arithmetic error but it means
-  results are not reproducible, which can cause problems when the
-  output is compared or stored.
- 
-film_in_stock and film_not_in_stock — logically correct.
-  The results are accurate, but the per-row function calls inside
-  the procedural loop are inefficient on large data. No incorrect
-  results, just poor scalability.
+
+get_customer_balance:
+This can produce incorrect results because it ignores overdue
+rentals that are still open.
+
+So a customer may appear to owe less than they really owe.
+
+rewards_report:
+This returns incorrect practical results for the sample data,
+because it looks at last month relative to today, where there
+is no matching data.
+
+group_concat:
+This can produce inconsistent ordering because there is no
+guaranteed order of concatenation.
+
+film_in_stock and film_not_in_stock:
+These functions return correct results, but they are inefficient
+because they process rows one by one.
+
+
+=============================================================
+Final conclusion
+=============================================================
+
+In this task, I analyzed the functions based on their real logic.
+
+I identified where the code is correct, where it is inefficient,
+and where it can produce wrong results.
+
+I also showed how rewards_report and get_customer_balance
+can be improved so they work more correctly and more clearly.
