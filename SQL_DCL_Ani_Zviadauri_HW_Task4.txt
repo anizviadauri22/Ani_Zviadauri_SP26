@@ -129,7 +129,7 @@ Why it makes role-based access easier:
  
 Instead of creating dozens of separate login users with passwords, I create one
 application-level login user and let it switch into the right role depending on
-who is using the app. The customer roles (like client_mary_smith) do not need
+who is using the app. The customer roles (like client_ani_zviadauri) do not need
 their own passwords. Access control is then managed through role membership,
 not through credential management.
  
@@ -140,24 +140,24 @@ Example from dvdrental:
     GRANT CONNECT ON DATABASE dvdrental TO app_proxy;
  
     -- I let app_proxy switch into customer roles
-    GRANT client_mary_smith TO app_proxy;
+    GRANT client_ani_zviadauri TO app_proxy;
  
-    -- When Mary Smith logs into the website, the app switches role:
-    SET ROLE client_mary_smith;
+    -- When Ani Zviadauri logs into the website, the app switches role:
+    SET ROLE client_ani_zviadauri;
  
-    -- Now all queries run under Mary's permissions and RLS filters her data
+    -- Now all queries run under Ani's permissions and RLS filters her data
     SELECT
         rental.rental_id,
         rental.rental_date,
         rental.customer_id
     FROM public.rental AS rental;
-    -- Returns only Mary's rows because of the RLS policy
+    -- Returns only Ani's rows because of the RLS policy
  
     -- After the request is done:
     RESET ROLE;
  
-    -- If I want to revoke Mary's access, I just remove the membership:
-    REVOKE client_mary_smith FROM app_proxy;
+    -- If I want to revoke Ani's access, I just remove the membership:
+    REVOKE client_ani_zviadauri FROM app_proxy;
     -- No password change needed, no reconnection required.
  
 Real scenario:

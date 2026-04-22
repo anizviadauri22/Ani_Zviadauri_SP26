@@ -23,11 +23,11 @@ I ran this to see all existing roles and group memberships:
  
 Output:
  
-    granted_role              | member_role
-    --------------------------+---------------------------
-    pg_monitor                | pg_read_all_settings
-    pg_monitor                | pg_read_all_stats
-    pg_monitor                | pg_stat_scan_tables
+granted_role         | member_role
+-----------------------------------
+pg_read_all_settings | pg_monitor
+pg_read_all_stats    | pg_monitor
+pg_stat_scan_tables  | pg_monitor
  
 I can see that only PostgreSQL's built-in monitoring group pg_monitor has members.
 There are no custom application roles yet.
