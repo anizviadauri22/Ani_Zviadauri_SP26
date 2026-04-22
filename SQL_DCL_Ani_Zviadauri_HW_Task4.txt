@@ -1,0 +1,170 @@
+Task 4: Theory Questions
+ 
+ 
+1. How can I restrict access to certain columns of a table?
+------------------------------------------------------------
+ 
+I can grant SELECT only on specific columns instead of the whole table.
+The user can then query only those columns and gets an error if they try to read anything else.
+ 
+Here is how I would do it in dvdrental:
+ 
+    -- I let rentaluser see names but not email
+    GRANT SELECT (customer_id, first_name, last_name, active)
+        ON public.customer
+        TO rentaluser;
+ 
+    -- This works for rentaluser:
+    SELECT
+        customer.customer_id,
+        LOWER(customer.first_name) AS first_name,
+        LOWER(customer.last_name) AS last_name
+    FROM public.customer AS customer;
+ 
+    -- This fails for rentaluser:
+    SELECT customer.email FROM public.customer AS customer;
+    -- ERROR: permission denied for table customer
+ 
+Another option is to create a view that only exposes the safe columns and grant SELECT on the view:
+ 
+    CREATE VIEW public.customer_public_info AS
+    SELECT
+        customer.customer_id,
+        LOWER(customer.first_name) AS first_name,
+        LOWER(customer.last_name) AS last_name
+    FROM public.customer AS customer;
+ 
+    GRANT SELECT ON public.customer_public_info TO rentaluser;
+ 
+Real scenario:
+A call-center agent needs to look up a customer by name but must never see the email address or payment data.
+Column-level grants make sure the agent's account can only read names and IDs.
+This is a common requirement under GDPR.
+ 
+ 
+2. What is the difference between identification and authentication?
+--------------------------------------------------------------------
+ 
+Identification is when a user says who they are, for example by providing a username.
+Authentication is when the system checks whether that claim is true, for example by verifying a password.
+ 
+Identification alone is not enough. Without authentication, anyone could claim to be any user.
+ 
+Example from dvdrental:
+ 
+    -- I created rentaluser with a password:
+    CREATE USER rentaluser WITH PASSWORD 'rentalpassword';
+ 
+    -- When rentaluser connects, PostgreSQL first reads the username (identification).
+    -- Then it checks the password against what is stored in pg_authid (authentication).
+ 
+    -- If the password is wrong:
+    -- FATAL: password authentication failed for user "rentaluser"
+ 
+Real scenario:
+A shop employee opens the point-of-sale app, which connects to dvdrental.
+The app sends the username (identification) and then the password (authentication).
+If the password check fails, PostgreSQL refuses the connection before any data is touched.
+ 
+ 
+3. What authentication methods does PostgreSQL recommend?
+---------------------------------------------------------
+ 
+PostgreSQL supports several methods, configured in pg_hba.conf.
+Here are the most important ones:
+ 
+trust
+    No password is needed at all. Only safe for isolated local sockets used by system processes.
+    I would never use this for application users.
+ 
+md5
+    Password is hashed with MD5. It is the old default but md5 is weak today and should be replaced.
+ 
+scram-sha-256 (recommended)
+    This is the modern standard. Passwords are never sent in plaintext and are salted,
+    which makes offline cracking much harder. I should use this for all password logins.
+ 
+cert
+    The client presents an SSL certificate instead of a password. Very strong.
+    I would use this for service-to-service connections.
+ 
+ldap / gss / sspi
+    These connect PostgreSQL to a company directory like Active Directory or Kerberos.
+    Good for large organizations that already manage users centrally.
+ 
+Example from dvdrental:
+ 
+    -- The recommended pg_hba.conf line for rentaluser:
+    -- host dvdrental rentaluser 0.0.0.0/0 scram-sha-256
+ 
+    -- I can check how the password is stored:
+    SELECT
+        pg_authid.rolname,
+        LEFT(pg_authid.rolpassword, 20) AS password_method_prefix
+    FROM pg_authid AS pg_authid
+    WHERE LOWER(pg_authid.rolname) = LOWER('rentaluser');
+    -- Output starts with: SCRAM-SHA-256$4096...
+    -- This confirms the password is stored with strong hashing.
+ 
+Real scenario:
+The rental shop's web server is on a different machine from the database.
+Using scram-sha-256 means that even if someone intercepts the network traffic,
+they cannot replay the authentication exchange or recover the password from it.
+ 
+ 
+4. What is proxy authentication and why does it make role-based access easier?
+-------------------------------------------------------------------------------
+ 
+Proxy authentication means one login user connects to the database and then switches
+to a different role for the actual work, without disconnecting.
+ 
+In PostgreSQL I do this with SET ROLE:
+ 
+    SET ROLE some_role;   -- switch to that role's permissions
+    RESET ROLE;           -- switch back
+ 
+This is called "proxy" because one set of credentials acts as a proxy for many roles.
+ 
+Why it makes role-based access easier:
+ 
+Instead of creating dozens of separate login users with passwords, I create one
+application-level login user and let it switch into the right role depending on
+who is using the app. The customer roles (like client_ani_zviadauri) do not need
+their own passwords. Access control is then managed through role membership,
+not through credential management.
+ 
+Example from dvdrental:
+ 
+    -- I create one shared login for the application
+    CREATE USER app_proxy WITH PASSWORD 'apppassword';
+    GRANT CONNECT ON DATABASE dvdrental TO app_proxy;
+ 
+    -- I let app_proxy switch into customer roles
+    GRANT client_ani_zviadauri TO app_proxy;
+ 
+    -- When Ani Zviadauri logs into the website, the app switches role:
+    SET ROLE client_ani_zviadauri;
+ 
+    -- Now all queries run under Ani's permissions and RLS filters her data
+    SELECT
+        rental.rental_id,
+        rental.rental_date,
+        rental.customer_id
+    FROM public.rental AS rental;
+    -- Returns only Ani's rows because of the RLS policy
+ 
+    -- After the request is done:
+    RESET ROLE;
+ 
+    -- If I want to revoke Ani's access, I just remove the membership:
+    REVOKE client_ani_zviadauri FROM app_proxy;
+    -- No password change needed, no reconnection required.
+ 
+Real scenario:
+The DVD rental website has thousands of customers. Creating a separate PostgreSQL
+login with a password for every customer would be impossible to manage.
+Instead the web app always connects as app_proxy and switches to the right customer
+role for each request. Row-level security then automatically filters all queries
+to show only that customer's own data. This pattern is common in production
+systems and works well with connection poolers like PgBouncer.
+ 

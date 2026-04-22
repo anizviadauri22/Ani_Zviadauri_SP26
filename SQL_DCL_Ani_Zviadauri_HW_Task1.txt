@@ -1,0 +1,191 @@
+Task 1: Security Analysis of the dvdrental Database
+ 
+ 
+I started by looking at what security is already in place in the dvdrental database.
+I checked roles, table permissions, row-level security, and database settings.
+Below I show each query I ran, what it returned, and what I think about it.
+ 
+ 
+1. Roles and who belongs to them
+---------------------------------
+ 
+I ran this to see all existing roles and group memberships:
+ 
+    SELECT
+        group_role.rolname AS granted_role,
+        member_role.rolname AS member_role
+    FROM pg_auth_members AS auth_members
+    INNER JOIN pg_roles AS group_role
+        ON group_role.oid = auth_members.roleid
+    INNER JOIN pg_roles AS member_role
+        ON member_role.oid = auth_members.member
+    ORDER BY group_role.rolname, member_role.rolname;
+ 
+Output:
+ 
+granted_role         | member_role
+-----------------------------------
+pg_read_all_settings | pg_monitor
+pg_read_all_stats    | pg_monitor
+pg_stat_scan_tables  | pg_monitor
+ 
+I can see that only PostgreSQL's built-in monitoring group pg_monitor has members.
+There are no custom application roles yet.
+This means all real database work goes through the superuser postgres, which is not safe.
+ 
+ 
+2. Table-level permissions
+---------------------------
+ 
+I checked which users have permissions on the main tables:
+ 
+    SELECT
+        table_grants.grantee,
+        table_grants.table_schema,
+        table_grants.table_name,
+        table_grants.privilege_type
+    FROM information_schema.role_table_grants AS table_grants
+    WHERE
+        LOWER(table_grants.table_schema) = LOWER('public')
+        AND LOWER(table_grants.table_name) IN (
+            LOWER('customer'),
+            LOWER('rental'),
+            LOWER('payment')
+        )
+    ORDER BY table_grants.table_name, table_grants.privilege_type;
+ 
+Output:
+ 
+    grantee  | table_schema | table_name | privilege_type
+    ---------+--------------+------------+----------------
+    postgres | public       | customer   | DELETE
+    postgres | public       | customer   | INSERT
+    postgres | public       | customer   | REFERENCES
+    postgres | public       | customer   | SELECT
+    postgres | public       | customer   | TRIGGER
+    postgres | public       | customer   | TRUNCATE
+    postgres | public       | customer   | UPDATE
+    postgres | public       | payment    | DELETE
+    postgres | public       | payment    | INSERT
+    ... (same pattern for rental and payment)
+ 
+Only postgres has access to any table.
+No other user or role has been granted anything yet.
+This is risky because any application connecting as postgres can do anything, including delete all data.
+ 
+ 
+3. Row-level security
+----------------------
+ 
+I checked whether row-level security is turned on:
+ 
+    SELECT
+        pg_class.relname AS table_name,
+        pg_class.relrowsecurity AS rls_enabled,
+        pg_class.relforcerowsecurity AS rls_forced
+    FROM pg_class AS pg_class
+    INNER JOIN pg_namespace AS pg_namespace
+        ON pg_namespace.oid = pg_class.relnamespace
+    WHERE
+        LOWER(pg_namespace.nspname) = LOWER('public')
+        AND LOWER(pg_class.relname) IN (
+            LOWER('customer'),
+            LOWER('rental'),
+            LOWER('payment')
+        )
+    ORDER BY pg_class.relname;
+ 
+Output:
+ 
+    table_name | rls_enabled | rls_forced
+    -----------+-------------+------------
+    customer   | false       | false
+    payment    | false       | false
+    rental     | false       | false
+ 
+I also checked for existing policies:
+ 
+    SELECT
+        pg_policies.schemaname,
+        pg_policies.tablename,
+        pg_policies.policyname,
+        pg_policies.roles,
+        pg_policies.cmd,
+        pg_policies.qual
+    FROM pg_policies AS pg_policies
+    WHERE
+        LOWER(pg_policies.schemaname) = LOWER('public')
+        AND LOWER(pg_policies.tablename) IN (
+            LOWER('customer'),
+            LOWER('rental'),
+            LOWER('payment')
+        );
+ 
+Output:
+ 
+    (0 rows)
+ 
+Row-level security is completely off and there are no policies at all.
+This means that if any user gets SELECT on the payment table, they can read every customer's payment history, not just their own.
+That is a serious problem.
+ 
+ 
+4. Database-level settings
+---------------------------
+ 
+I checked the connection limit and owner of the database:
+ 
+    SELECT
+        database.datname AS database_name,
+        pg_catalog.pg_get_userbyid(database.datdba) AS owner,
+        database.datconnlimit AS connection_limit
+    FROM pg_database AS database
+    WHERE LOWER(database.datname) = LOWER('dvdrental');
+ 
+Output:
+ 
+    database_name | owner    | connection_limit
+    --------------+----------+-----------------
+    dvdrental     | postgres | -1
+ 
+The connection limit is -1, which means unlimited connections are allowed.
+This can cause problems if too many clients connect at once and exhaust server resources.
+ 
+I also found the path to the authentication config file:
+ 
+    SHOW hba_file;
+ 
+Output:
+ 
+    /etc/postgresql/14/main/pg_hba.conf
+ 
+I opened the file and found these relevant lines:
+ 
+    # TYPE  DATABASE   USER   ADDRESS        METHOD
+    local   all        all                   scram-sha-256
+    host    all        all    127.0.0.1/32   scram-sha-256
+    host    all        all    ::1/128        scram-sha-256
+ 
+In my environment scram-sha-256 is already used for all connection types.
+This is the recommended modern method. Passwords are salted and never sent in plaintext,
+which makes offline cracking much harder than with the older md5 method.
+ 
+ 
+5. My overall assessment
+-------------------------
+ 
+I think the current setup is risky for a real application for these reasons:
+ 
+- Everything runs as the superuser postgres. There is no separation of duties.
+- Row-level security is off, so any user with table access sees all rows.
+- The connection limit is unlimited, which is a resource risk.
+ 
+Authentication is actually already in good shape in my environment since scram-sha-256 is used.
+That said, the missing role separation and lack of row-level security are still serious gaps.
+ 
+The biggest vulnerability I found is that there is no row-level security on the payment table.
+If someone grants a user SELECT on that table, the user can see every customer's payment amount and date.
+ 
+My suggestion is to enable row-level security on rental and payment and create policies so each user sees only their own rows.
+I also recommend setting a reasonable connection limit (for example 100) to prevent resource exhaustion.
+I implement the row-level security part in Task 3.
