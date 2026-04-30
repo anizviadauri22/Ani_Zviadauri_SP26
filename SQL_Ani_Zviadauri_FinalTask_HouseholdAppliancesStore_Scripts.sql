@@ -5,8 +5,9 @@
 --   Physical implementation of the Household Appliances Store logical data model.
 --   The schema is in Third Normal Form (3NF): every non-key attribute
 --   depends only on its table's primary key. Stable status values are stored
---   as ENUM types, while business entities such as categories and suppliers
---   are stored in separate tables and linked with foreign keys.
+--   as ENUM types, while business entities such as categories, suppliers,
+--   cities, job titles, brands, and product models are stored in separate
+--   tables and linked with foreign keys.
 --
 -- NOTE ON RERUNNABILITY:
 --   I made this script rerunnable by dropping and recreating the schema
@@ -34,6 +35,7 @@ CREATE DATABASE household_appliances_store_db;
 DROP SCHEMA IF EXISTS household_appliances_store CASCADE;
 CREATE SCHEMA household_appliances_store;
 SET search_path TO household_appliances_store;
+
 -- =========================================================
 -- 2. ENUM TYPES
 -- =========================================================
@@ -97,7 +99,42 @@ CREATE TABLE household_appliances_store.customer (
     ) STORED,
     email VARCHAR(255) NOT NULL UNIQUE,
     phone VARCHAR(30) NOT NULL UNIQUE,
-    created_at DATE NOT NULL DEFAULT CURRENT_DATE
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP -- CHANGED
+);
+
+-- I create city table to avoid repeating city values in supplier table
+CREATE TABLE household_appliances_store.city (
+    city_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    city_name VARCHAR(100) NOT NULL UNIQUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- I create job_title table to avoid repeating job title values in employee table
+CREATE TABLE household_appliances_store.job_title (
+    job_title_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    job_title_name VARCHAR(50) NOT NULL UNIQUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- I create brand table because brand is a reusable business entity
+CREATE TABLE household_appliances_store.brand (
+    brand_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    brand_name VARCHAR(100) NOT NULL UNIQUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- I create product_model table because model depends on brand.
+-- Warranty is stored here because it depends on the product model.
+CREATE TABLE household_appliances_store.product_model (
+    product_model_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    brand_id BIGINT NOT NULL,
+    model_name VARCHAR(100) NOT NULL,
+    warranty_months INTEGER NOT NULL DEFAULT 12,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_product_model_brand
+        FOREIGN KEY (brand_id)
+        REFERENCES household_appliances_store.brand (brand_id),
+    CONSTRAINT uq_product_model_brand_model UNIQUE (brand_id, model_name)
 );
 
 -- I create employee table to store employees working in the store
@@ -110,17 +147,21 @@ CREATE TABLE household_appliances_store.employee (
     ) STORED,
     email VARCHAR(255) NOT NULL UNIQUE,
     phone VARCHAR(30) NOT NULL UNIQUE,
-    job_title VARCHAR(50) NOT NULL,
-    hire_date DATE NOT NULL
+    job_title_id BIGINT NOT NULL, -- CHANGED
+    hire_date DATE NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- ADDED
+    CONSTRAINT fk_employee_job_title
+        FOREIGN KEY (job_title_id)
+        REFERENCES household_appliances_store.job_title (job_title_id)
 );
 
 -- I create category table to classify products
 CREATE TABLE household_appliances_store.category (
     category_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     category_name VARCHAR(100) NOT NULL UNIQUE,
-    category_description VARCHAR(255)
+    category_description VARCHAR(255),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP -- ADDED
 );
-
 
 -- I create supplier table to store supplier information
 CREATE TABLE household_appliances_store.supplier (
@@ -128,25 +169,27 @@ CREATE TABLE household_appliances_store.supplier (
     supplier_name VARCHAR(150) NOT NULL UNIQUE,
     contact_email VARCHAR(255) NOT NULL UNIQUE,
     phone VARCHAR(30) NOT NULL UNIQUE,
-    city VARCHAR(100) NOT NULL,
-    created_at DATE NOT NULL DEFAULT CURRENT_DATE
+    city_id BIGINT NOT NULL, -- CHANGED
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- CHANGED
+    CONSTRAINT fk_supplier_city
+        FOREIGN KEY (city_id)
+        REFERENCES household_appliances_store.city (city_id)
 );
 
--- I create product table to store products and link them to category and supplier
+-- I create product table to store products and link them to model, category and supplier
 CREATE TABLE household_appliances_store.product (
     product_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     product_name VARCHAR(150) NOT NULL,
-    brand VARCHAR(100) NOT NULL,
-    model VARCHAR(100) NOT NULL UNIQUE,
+    product_model_id BIGINT NOT NULL, -- CHANGED
     category_id BIGINT NOT NULL,
     supplier_id BIGINT NOT NULL,
     unit_price NUMERIC(10,2) NOT NULL,
     stock_quantity INTEGER NOT NULL DEFAULT 0,
-    warranty_months INTEGER NOT NULL DEFAULT 12,
-    product_display_name VARCHAR(300) GENERATED ALWAYS AS (
-        trim(brand) || ' ' || trim(model) || ' - ' || trim(product_name)
-    ) STORED,
-    created_at DATE NOT NULL DEFAULT CURRENT_DATE,
+    product_display_name VARCHAR(300), -- CHANGED
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- CHANGED
+    CONSTRAINT fk_product_product_model
+        FOREIGN KEY (product_model_id)
+        REFERENCES household_appliances_store.product_model (product_model_id),
     CONSTRAINT fk_product_category
         FOREIGN KEY (category_id)
         REFERENCES household_appliances_store.category (category_id),
@@ -154,7 +197,6 @@ CREATE TABLE household_appliances_store.product (
         FOREIGN KEY (supplier_id)
         REFERENCES household_appliances_store.supplier (supplier_id)
 );
-
 
 -- I create sales_transaction table to store transaction header data
 CREATE TABLE household_appliances_store.sales_transaction (
@@ -174,22 +216,22 @@ CREATE TABLE household_appliances_store.sales_transaction (
         REFERENCES household_appliances_store.employee (employee_id)
 );
 
-
--- I create sales_transaction_item table to store products in each transaction and resolve many-to-many relationship
+-- I create sales_transaction_item table to store products in each transaction and resolve many-to-many relationship.
+-- CHANGED: I use a composite primary key instead of both a surrogate key and a unique pair.
 CREATE TABLE household_appliances_store.sales_transaction_item (
-    sales_transaction_item_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     sales_transaction_id BIGINT NOT NULL,
     product_id BIGINT NOT NULL,
     quantity INTEGER NOT NULL,
     unit_price NUMERIC(10,2) NOT NULL,
     line_total NUMERIC(12,2) GENERATED ALWAYS AS (quantity * unit_price) STORED,
+    CONSTRAINT pk_sales_transaction_item
+        PRIMARY KEY (sales_transaction_id, product_id),
     CONSTRAINT fk_sales_transaction_item_transaction
         FOREIGN KEY (sales_transaction_id)
         REFERENCES household_appliances_store.sales_transaction (sales_transaction_id),
     CONSTRAINT fk_sales_transaction_item_product
         FOREIGN KEY (product_id)
-        REFERENCES household_appliances_store.product (product_id),
-    CONSTRAINT uq_sales_transaction_item UNIQUE (sales_transaction_id, product_id)
+        REFERENCES household_appliances_store.product (product_id)
 );
 
 -- I create procurement table to track product restocking from suppliers
@@ -211,7 +253,6 @@ CREATE TABLE household_appliances_store.procurement (
         REFERENCES household_appliances_store.product (product_id)
 );
 
-
 -- =========================================================
 -- 4. CONSTRAINTS ADDED WITH ALTER TABLE
 -- =========================================================
@@ -227,21 +268,34 @@ ALTER TABLE household_appliances_store.employee
 ADD CONSTRAINT chk_employee_email_lowercase
 CHECK (email = lower(trim(email)));
 
-ALTER TABLE household_appliances_store.employee
-ADD CONSTRAINT chk_employee_job_title_not_blank
-CHECK (length(trim(job_title)) > 0);
+
+ALTER TABLE household_appliances_store.city
+ADD CONSTRAINT chk_city_name_not_blank
+CHECK (length(trim(city_name)) > 0);
+
+
+ALTER TABLE household_appliances_store.job_title
+ADD CONSTRAINT chk_job_title_name_not_blank
+CHECK (length(trim(job_title_name)) > 0);
+
+
+ALTER TABLE household_appliances_store.brand
+ADD CONSTRAINT chk_brand_name_not_blank
+CHECK (length(trim(brand_name)) > 0);
+
+
+ALTER TABLE household_appliances_store.product_model
+ADD CONSTRAINT chk_product_model_name_not_blank
+CHECK (length(trim(model_name)) > 0);
+
+
+ALTER TABLE household_appliances_store.product_model
+ADD CONSTRAINT chk_product_model_warranty_months_non_negative
+CHECK (warranty_months >= 0);
 
 ALTER TABLE household_appliances_store.product
 ADD CONSTRAINT chk_product_name_not_blank
 CHECK (length(trim(product_name)) > 0);
-
-ALTER TABLE household_appliances_store.product
-ADD CONSTRAINT chk_product_brand_not_blank
-CHECK (length(trim(brand)) > 0);
-
-ALTER TABLE household_appliances_store.product
-ADD CONSTRAINT chk_product_model_not_blank
-CHECK (length(trim(model)) > 0);
 
 ALTER TABLE household_appliances_store.product
 ADD CONSTRAINT chk_product_unit_price_positive
@@ -250,10 +304,6 @@ CHECK (unit_price > 0);
 ALTER TABLE household_appliances_store.product
 ADD CONSTRAINT chk_product_stock_quantity_non_negative
 CHECK (stock_quantity >= 0);
-
-ALTER TABLE household_appliances_store.product
-ADD CONSTRAINT chk_product_warranty_months_non_negative
-CHECK (warranty_months >= 0);
 
 ALTER TABLE household_appliances_store.sales_transaction
 ADD CONSTRAINT chk_sales_transaction_date_after_2026_01_01
@@ -290,36 +340,128 @@ CHECK (delivery_date > DATE '2026-01-01');
 
 INSERT INTO household_appliances_store.category (
     category_name,
-    category_description
+    category_description,
+    created_at -- ADDED
 )
 VALUES
-    ('refrigerator', 'cooling appliances for food storage'),
-    ('washing machine', 'laundry appliances for household use'),
-    ('dishwasher', 'appliances for dish cleaning'),
-    ('microwave', 'compact heating appliances'),
-    ('vacuum cleaner', 'cleaning appliances for floors and carpets'),
-    ('air conditioner', 'climate control appliances')
+    ('refrigerator', 'cooling appliances for food storage', CURRENT_TIMESTAMP - INTERVAL '84 days'),
+    ('washing machine', 'laundry appliances for household use', CURRENT_TIMESTAMP - INTERVAL '79 days'),
+    ('dishwasher', 'appliances for dish cleaning', CURRENT_TIMESTAMP - INTERVAL '73 days'),
+    ('microwave', 'compact heating appliances', CURRENT_TIMESTAMP - INTERVAL '67 days'),
+    ('vacuum cleaner', 'cleaning appliances for floors and carpets', CURRENT_TIMESTAMP - INTERVAL '62 days'),
+    ('air conditioner', 'climate control appliances', CURRENT_TIMESTAMP - INTERVAL '57 days')
 ON CONFLICT (category_name) DO NOTHING;
 
--- 5.2 SUPPLIER
+-- 5.2 CITY 
+
+INSERT INTO household_appliances_store.city (
+    city_name,
+    created_at
+)
+VALUES
+    ('tbilisi', CURRENT_TIMESTAMP - INTERVAL '84 days'),
+    ('batumi', CURRENT_TIMESTAMP - INTERVAL '79 days'),
+    ('kutaisi', CURRENT_TIMESTAMP - INTERVAL '73 days'),
+    ('rustavi', CURRENT_TIMESTAMP - INTERVAL '67 days'),
+    ('gori', CURRENT_TIMESTAMP - INTERVAL '62 days'),
+    ('zugdidi', CURRENT_TIMESTAMP - INTERVAL '57 days')
+ON CONFLICT (city_name) DO NOTHING;
+
+-- 5.3 JOB TITLE 
+INSERT INTO household_appliances_store.job_title (
+    job_title_name,
+    created_at
+)
+VALUES
+    ('sales manager', CURRENT_TIMESTAMP - INTERVAL '84 days'),
+    ('sales consultant', CURRENT_TIMESTAMP - INTERVAL '79 days'),
+    ('inventory specialist', CURRENT_TIMESTAMP - INTERVAL '73 days'),
+    ('procurement specialist', CURRENT_TIMESTAMP - INTERVAL '67 days'),
+    ('store manager', CURRENT_TIMESTAMP - INTERVAL '62 days'),
+    ('cashier', CURRENT_TIMESTAMP - INTERVAL '57 days')
+ON CONFLICT (job_title_name) DO NOTHING;
+
+-- 5.4 BRAND 
+
+INSERT INTO household_appliances_store.brand (
+    brand_name,
+    created_at
+)
+VALUES
+    ('samsung', CURRENT_TIMESTAMP - INTERVAL '84 days'),
+    ('lg', CURRENT_TIMESTAMP - INTERVAL '79 days'),
+    ('bosch', CURRENT_TIMESTAMP - INTERVAL '73 days'),
+    ('whirlpool', CURRENT_TIMESTAMP - INTERVAL '67 days'),
+    ('philips', CURRENT_TIMESTAMP - INTERVAL '62 days'),
+    ('midea', CURRENT_TIMESTAMP - INTERVAL '57 days')
+ON CONFLICT (brand_name) DO NOTHING;
+
+-- 5.5 PRODUCT MODEL 
+
+INSERT INTO household_appliances_store.product_model (
+    brand_id,
+    model_name,
+    warranty_months,
+    created_at
+)
+SELECT
+    household_appliances_store.brand.brand_id,
+    product_model_seed.model_name,
+    product_model_seed.warranty_months,
+    product_model_seed.created_at
+FROM (
+    VALUES
+        ('samsung', 'rb34t600esa', 24, CURRENT_TIMESTAMP - INTERVAL '82 days'),
+        ('lg', 'f2v5s8s0', 24, CURRENT_TIMESTAMP - INTERVAL '77 days'),
+        ('bosch', 'sms2iti33e', 24, CURRENT_TIMESTAMP - INTERVAL '71 days'),
+        ('whirlpool', 'mwp338sx', 12, CURRENT_TIMESTAMP - INTERVAL '66 days'),
+        ('philips', 'xb2123', 12, CURRENT_TIMESTAMP - INTERVAL '61 days'),
+        ('midea', 'msagbu-12hrfn8', 24, CURRENT_TIMESTAMP - INTERVAL '56 days')
+) AS product_model_seed (
+    brand_name,
+    model_name,
+    warranty_months,
+    created_at
+)
+INNER JOIN household_appliances_store.brand
+    ON household_appliances_store.brand.brand_name = product_model_seed.brand_name
+ON CONFLICT (brand_id, model_name) DO NOTHING;
+
+-- 5.6 SUPPLIER 
 
 INSERT INTO household_appliances_store.supplier (
     supplier_name,
     contact_email,
     phone,
-    city,
+    city_id,
     created_at
 )
-VALUES
-    ('geotech distribution', 'sales@geotech.example', '+995555000101', 'tbilisi', CURRENT_DATE - 80),
-    ('homeplus import', 'contact@homeplus.example', '+995555000102', 'batumi', CURRENT_DATE - 76),
-    ('euroappliance supply', 'office@euroappliance.example', '+995555000103', 'kutaisi', CURRENT_DATE - 72),
-    ('nordic trade group', 'info@nordictrade.example', '+995555000104', 'rustavi', CURRENT_DATE - 68),
-    ('smartliving wholesale', 'team@smartliving.example', '+995555000105', 'gori', CURRENT_DATE - 64),
-    ('megaelectro partners', 'orders@megaelectro.example', '+995555000106', 'zugdidi', CURRENT_DATE - 60)
+SELECT
+    supplier_seed.supplier_name,
+    supplier_seed.contact_email,
+    supplier_seed.phone,
+    household_appliances_store.city.city_id,
+    supplier_seed.created_at
+FROM (
+    VALUES
+        ('geotech distribution', 'sales@geotech.example', '+995555000101', 'tbilisi', CURRENT_TIMESTAMP - INTERVAL '80 days'),
+        ('homeplus import', 'contact@homeplus.example', '+995555000102', 'batumi', CURRENT_TIMESTAMP - INTERVAL '76 days'),
+        ('euroappliance supply', 'office@euroappliance.example', '+995555000103', 'kutaisi', CURRENT_TIMESTAMP - INTERVAL '72 days'),
+        ('nordic trade group', 'info@nordictrade.example', '+995555000104', 'rustavi', CURRENT_TIMESTAMP - INTERVAL '68 days'),
+        ('smartliving wholesale', 'team@smartliving.example', '+995555000105', 'gori', CURRENT_TIMESTAMP - INTERVAL '64 days'),
+        ('megaelectro partners', 'orders@megaelectro.example', '+995555000106', 'zugdidi', CURRENT_TIMESTAMP - INTERVAL '60 days')
+) AS supplier_seed (
+    supplier_name,
+    contact_email,
+    phone,
+    city_name,
+    created_at
+)
+INNER JOIN household_appliances_store.city
+    ON household_appliances_store.city.city_name = supplier_seed.city_name
 ON CONFLICT (supplier_name) DO NOTHING;
 
--- 5.3 CUSTOMER
+-- 5.7 CUSTOMER
 
 INSERT INTO household_appliances_store.customer (
     first_name,
@@ -329,82 +471,111 @@ INSERT INTO household_appliances_store.customer (
     created_at
 )
 VALUES
-    ('ani', 'zviadauri', 'ani.zviadauri@example.com', '+995599000001', CURRENT_DATE - 84),
-    ('nino', 'beridze', 'nino.beridze@example.com', '+995599000002', CURRENT_DATE - 79),
-    ('luka', 'gogoladze', 'luka.gogoladze@example.com', '+995599000003', CURRENT_DATE - 73),
-    ('mariam', 'kapanadze', 'mariam.kapanadze@example.com', '+995599000004', CURRENT_DATE - 67),
-    ('sandro', 'gelashvili', 'sandro.gelashvili@example.com', '+995599000005', CURRENT_DATE - 62),
-    ('tekla', 'japaridze', 'tekla.japaridze@example.com', '+995599000006', CURRENT_DATE - 57)
+    ('ani', 'zviadauri', 'ani.zviadauri@example.com', '+995599000001', CURRENT_TIMESTAMP - INTERVAL '84 days'),
+    ('nino', 'beridze', 'nino.beridze@example.com', '+995599000002', CURRENT_TIMESTAMP - INTERVAL '79 days'),
+    ('luka', 'gogoladze', 'luka.gogoladze@example.com', '+995599000003', CURRENT_TIMESTAMP - INTERVAL '73 days'),
+    ('mariam', 'kapanadze', 'mariam.kapanadze@example.com', '+995599000004', CURRENT_TIMESTAMP - INTERVAL '67 days'),
+    ('sandro', 'gelashvili', 'sandro.gelashvili@example.com', '+995599000005', CURRENT_TIMESTAMP - INTERVAL '62 days'),
+    ('tekla', 'japaridze', 'tekla.japaridze@example.com', '+995599000006', CURRENT_TIMESTAMP - INTERVAL '57 days')
 ON CONFLICT (email) DO NOTHING;
 
--- 5.4 EMPLOYEE
+-- 5.8 EMPLOYEE 
 
 INSERT INTO household_appliances_store.employee (
     first_name,
     last_name,
     email,
     phone,
-    job_title,
-    hire_date
+    job_title_id,
+    hire_date,
+    created_at
 )
-VALUES
-    ('irakli', 'mchedlishvili', 'irakli.mchedlishvili@store.example', '+995577100001', 'sales manager', DATE '2026-01-15'),
-    ('tamta', 'melikidze', 'tamta.melikidze@store.example', '+995577100002', 'sales consultant', DATE '2026-01-22'),
-    ('giorgi', 'kiknadze', 'giorgi.kiknadze@store.example', '+995577100003', 'sales consultant', DATE '2026-02-01'),
-    ('elene', 'shengelia', 'elene.shengelia@store.example', '+995577100004', 'inventory specialist', DATE '2026-02-10'),
-    ('dato', 'tsiklauri', 'dato.tsiklauri@store.example', '+995577100005', 'procurement specialist', DATE '2026-02-18'),
-    ('salome', 'otaraashvili', 'salome.otaraashvili@store.example', '+995577100006', 'sales consultant', DATE '2026-03-02')
+SELECT
+    employee_seed.first_name,
+    employee_seed.last_name,
+    employee_seed.email,
+    employee_seed.phone,
+    household_appliances_store.job_title.job_title_id,
+    employee_seed.hire_date,
+    employee_seed.created_at
+FROM (
+    VALUES
+        ('irakli', 'mchedlishvili', 'irakli.mchedlishvili@store.example', '+995577100001', 'sales manager', DATE '2026-01-15', CURRENT_TIMESTAMP - INTERVAL '84 days'),
+        ('tamta', 'melikidze', 'tamta.melikidze@store.example', '+995577100002', 'sales consultant', DATE '2026-01-22', CURRENT_TIMESTAMP - INTERVAL '79 days'),
+        ('giorgi', 'kiknadze', 'giorgi.kiknadze@store.example', '+995577100003', 'sales consultant', DATE '2026-02-01', CURRENT_TIMESTAMP - INTERVAL '73 days'),
+        ('elene', 'shengelia', 'elene.shengelia@store.example', '+995577100004', 'inventory specialist', DATE '2026-02-10', CURRENT_TIMESTAMP - INTERVAL '67 days'),
+        ('dato', 'tsiklauri', 'dato.tsiklauri@store.example', '+995577100005', 'procurement specialist', DATE '2026-02-18', CURRENT_TIMESTAMP - INTERVAL '62 days'),
+        ('salome', 'otaraashvili', 'salome.otaraashvili@store.example', '+995577100006', 'sales consultant', DATE '2026-03-02', CURRENT_TIMESTAMP - INTERVAL '57 days')
+) AS employee_seed (
+    first_name,
+    last_name,
+    email,
+    phone,
+    job_title_name,
+    hire_date,
+    created_at
+)
+INNER JOIN household_appliances_store.job_title
+    ON household_appliances_store.job_title.job_title_name = employee_seed.job_title_name
 ON CONFLICT (email) DO NOTHING;
 
--- 5.5 PRODUCT
+-- 5.9 PRODUCT 
+
 
 INSERT INTO household_appliances_store.product (
     product_name,
-    brand,
-    model,
+    product_model_id,
     category_id,
     supplier_id,
     unit_price,
     stock_quantity,
-    warranty_months,
+    product_display_name,
     created_at
 )
 SELECT
     product_seed.product_name,
-    product_seed.brand,
-    product_seed.model,
+    household_appliances_store.product_model.product_model_id,
     household_appliances_store.category.category_id,
     household_appliances_store.supplier.supplier_id,
     product_seed.unit_price,
     product_seed.stock_quantity,
-    product_seed.warranty_months,
+    trim(product_seed.brand_name) || ' ' || trim(product_seed.model_name) || ' - ' || trim(product_seed.product_name),
     product_seed.created_at
 FROM (
     VALUES
-        ('no frost refrigerator', 'samsung', 'rb34t600esa', 'refrigerator', 'geotech distribution', 1899.00, 8, 24, CURRENT_DATE - 82),
-        ('front load washer', 'lg', 'f2v5s8s0', 'washing machine', 'homeplus import', 1499.00, 10, 24, CURRENT_DATE - 77),
-        ('compact dishwasher', 'bosch', 'sms2iti33e', 'dishwasher', 'euroappliance supply', 1299.00, 7, 24, CURRENT_DATE - 71),
-        ('grill microwave', 'whirlpool', 'mwp338sx', 'microwave', 'nordic trade group', 499.00, 14, 12, CURRENT_DATE - 66),
-        ('bagless vacuum', 'philips', 'xb2123', 'vacuum cleaner', 'smartliving wholesale', 359.00, 16, 12, CURRENT_DATE - 61),
-        ('split ac 12000 btu', 'midea', 'msagbu-12hrfn8', 'air conditioner', 'megaelectro partners', 1699.00, 6, 24, CURRENT_DATE - 56)
+        ('no frost refrigerator', 'samsung', 'rb34t600esa', 'refrigerator', 'geotech distribution', 1899.00, 8, CURRENT_TIMESTAMP - INTERVAL '82 days'),
+        ('front load washer', 'lg', 'f2v5s8s0', 'washing machine', 'homeplus import', 1499.00, 10, CURRENT_TIMESTAMP - INTERVAL '77 days'),
+        ('compact dishwasher', 'bosch', 'sms2iti33e', 'dishwasher', 'euroappliance supply', 1299.00, 7, CURRENT_TIMESTAMP - INTERVAL '71 days'),
+        ('grill microwave', 'whirlpool', 'mwp338sx', 'microwave', 'nordic trade group', 499.00, 14, CURRENT_TIMESTAMP - INTERVAL '66 days'),
+        ('bagless vacuum', 'philips', 'xb2123', 'vacuum cleaner', 'smartliving wholesale', 359.00, 16, CURRENT_TIMESTAMP - INTERVAL '61 days'),
+        ('split ac 12000 btu', 'midea', 'msagbu-12hrfn8', 'air conditioner', 'megaelectro partners', 1699.00, 6, CURRENT_TIMESTAMP - INTERVAL '56 days')
 ) AS product_seed (
     product_name,
-    brand,
-    model,
+    brand_name,
+    model_name,
     category_name,
     supplier_name,
     unit_price,
     stock_quantity,
-    warranty_months,
     created_at
 )
+INNER JOIN household_appliances_store.brand
+    ON household_appliances_store.brand.brand_name = product_seed.brand_name
+INNER JOIN household_appliances_store.product_model
+    ON household_appliances_store.product_model.brand_id = household_appliances_store.brand.brand_id
+   AND household_appliances_store.product_model.model_name = product_seed.model_name
 INNER JOIN household_appliances_store.category
     ON household_appliances_store.category.category_name = product_seed.category_name
 INNER JOIN household_appliances_store.supplier
     ON household_appliances_store.supplier.supplier_name = product_seed.supplier_name
-ON CONFLICT (model) DO NOTHING;
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM household_appliances_store.product
+    WHERE household_appliances_store.product.product_model_id =
+          household_appliances_store.product_model.product_model_id
+);
 
--- 5.6 PROCUREMENT
+-- 5.10 PROCUREMENT 
 
 INSERT INTO household_appliances_store.procurement (
     procurement_number,
@@ -427,16 +598,17 @@ SELECT
     procurement_seed.created_at
 FROM (
     VALUES
-        ('PR-2026-001', 'geotech distribution', 'rb34t600esa', 5, 1500.00, CURRENT_DATE - 82, 'received', CURRENT_TIMESTAMP - INTERVAL '82 days'),
-        ('PR-2026-002', 'homeplus import', 'f2v5s8s0', 6, 1180.00, CURRENT_DATE - 76, 'received', CURRENT_TIMESTAMP - INTERVAL '76 days'),
-        ('PR-2026-003', 'euroappliance supply', 'sms2iti33e', 4, 980.00, CURRENT_DATE - 70, 'received', CURRENT_TIMESTAMP - INTERVAL '70 days'),
-        ('PR-2026-004', 'nordic trade group', 'mwp338sx', 10, 320.00, CURRENT_DATE - 64, 'received', CURRENT_TIMESTAMP - INTERVAL '64 days'),
-        ('PR-2026-005', 'smartliving wholesale', 'xb2123', 12, 220.00, CURRENT_DATE - 59, 'received', CURRENT_TIMESTAMP - INTERVAL '59 days'),
-        ('PR-2026-006', 'megaelectro partners', 'msagbu-12hrfn8', 3, 1350.00, CURRENT_DATE - 52, 'received', CURRENT_TIMESTAMP - INTERVAL '52 days')
+        ('PR-2026-001', 'geotech distribution', 'samsung', 'rb34t600esa', 5, 1500.00, CURRENT_DATE - 82, 'received', CURRENT_TIMESTAMP - INTERVAL '82 days'),
+        ('PR-2026-002', 'homeplus import', 'lg', 'f2v5s8s0', 6, 1180.00, CURRENT_DATE - 76, 'received', CURRENT_TIMESTAMP - INTERVAL '76 days'),
+        ('PR-2026-003', 'euroappliance supply', 'bosch', 'sms2iti33e', 4, 980.00, CURRENT_DATE - 70, 'received', CURRENT_TIMESTAMP - INTERVAL '70 days'),
+        ('PR-2026-004', 'nordic trade group', 'whirlpool', 'mwp338sx', 10, 320.00, CURRENT_DATE - 64, 'received', CURRENT_TIMESTAMP - INTERVAL '64 days'),
+        ('PR-2026-005', 'smartliving wholesale', 'philips', 'xb2123', 12, 220.00, CURRENT_DATE - 59, 'received', CURRENT_TIMESTAMP - INTERVAL '59 days'),
+        ('PR-2026-006', 'megaelectro partners', 'midea', 'msagbu-12hrfn8', 3, 1350.00, CURRENT_DATE - 52, 'received', CURRENT_TIMESTAMP - INTERVAL '52 days')
 ) AS procurement_seed (
     procurement_number,
     supplier_name,
-    model,
+    brand_name,
+    model_name,
     quantity,
     unit_cost,
     delivery_date,
@@ -445,11 +617,16 @@ FROM (
 )
 INNER JOIN household_appliances_store.supplier
     ON household_appliances_store.supplier.supplier_name = procurement_seed.supplier_name
+INNER JOIN household_appliances_store.brand
+    ON household_appliances_store.brand.brand_name = procurement_seed.brand_name
+INNER JOIN household_appliances_store.product_model
+    ON household_appliances_store.product_model.brand_id = household_appliances_store.brand.brand_id
+   AND household_appliances_store.product_model.model_name = procurement_seed.model_name
 INNER JOIN household_appliances_store.product
-    ON household_appliances_store.product.model = procurement_seed.model
+    ON household_appliances_store.product.product_model_id = household_appliances_store.product_model.product_model_id
 ON CONFLICT (procurement_number) DO NOTHING;
 
--- 5.7 SALES TRANSACTION
+-- 5.11 SALES TRANSACTION
 
 INSERT INTO household_appliances_store.sales_transaction (
     transaction_number,
@@ -491,7 +668,7 @@ INNER JOIN household_appliances_store.employee
     ON household_appliances_store.employee.email = transaction_seed.employee_email
 ON CONFLICT (transaction_number) DO NOTHING;
 
--- 5.8 SALES TRANSACTION ITEM
+-- 5.12 SALES TRANSACTION ITEM 
 
 INSERT INTO household_appliances_store.sales_transaction_item (
     sales_transaction_id,
@@ -506,30 +683,38 @@ SELECT
     item_seed.unit_price
 FROM (
     VALUES
-        ('TR-2026-001', 'rb34t600esa', 1, 1899.00),
-        ('TR-2026-001', 'mwp338sx', 1, 499.00),
-        ('TR-2026-002', 'xb2123', 2, 359.00),
-        ('TR-2026-003', 'f2v5s8s0', 1, 1499.00),
-        ('TR-2026-004', 'sms2iti33e', 1, 1299.00),
-        ('TR-2026-005', 'msagbu-12hrfn8', 1, 1699.00),
-        ('TR-2026-006', 'mwp338sx', 1, 499.00),
-        ('TR-2026-006', 'xb2123', 1, 359.00)
+        ('TR-2026-001', 'samsung', 'rb34t600esa', 1, 1899.00),
+        ('TR-2026-001', 'whirlpool', 'mwp338sx', 1, 499.00),
+        ('TR-2026-002', 'philips', 'xb2123', 2, 359.00),
+        ('TR-2026-003', 'lg', 'f2v5s8s0', 1, 1499.00),
+        ('TR-2026-004', 'bosch', 'sms2iti33e', 1, 1299.00),
+        ('TR-2026-005', 'midea', 'msagbu-12hrfn8', 1, 1699.00),
+        ('TR-2026-006', 'whirlpool', 'mwp338sx', 1, 499.00),
+        ('TR-2026-006', 'philips', 'xb2123', 1, 359.00)
 ) AS item_seed (
     transaction_number,
-    model,
+    brand_name,
+    model_name,
     quantity,
     unit_price
 )
 INNER JOIN household_appliances_store.sales_transaction
     ON household_appliances_store.sales_transaction.transaction_number = item_seed.transaction_number
+INNER JOIN household_appliances_store.brand
+    ON household_appliances_store.brand.brand_name = item_seed.brand_name
+INNER JOIN household_appliances_store.product_model
+    ON household_appliances_store.product_model.brand_id = household_appliances_store.brand.brand_id
+   AND household_appliances_store.product_model.model_name = item_seed.model_name
 INNER JOIN household_appliances_store.product
-    ON household_appliances_store.product.model = item_seed.model
+    ON household_appliances_store.product.product_model_id = household_appliances_store.product_model.product_model_id
 ON CONFLICT (sales_transaction_id, product_id) DO NOTHING;
 
 -- =========================================================
 -- 6. FUNCTION 1
 -- I make a function that updates one chosen column in the product table.
 -- I keep it controlled with a whitelist of allowed columns.
+-- CHANGED: brand, model, and warranty_months are not updated here because
+-- they now belong to brand and product_model tables.
 -- =========================================================
 
 CREATE OR REPLACE FUNCTION household_appliances_store.update_product_column(
@@ -544,11 +729,9 @@ $$
 BEGIN
     IF lower(trim(p_column_name)) NOT IN (
         'product_name',
-        'brand',
-        'model',
         'unit_price',
         'stock_quantity',
-        'warranty_months',
+        'product_display_name',
         'created_at'
     ) THEN
         RAISE EXCEPTION 'Column % is not allowed.', p_column_name;
@@ -557,16 +740,6 @@ BEGIN
     IF lower(trim(p_column_name)) = 'product_name' THEN
         UPDATE household_appliances_store.product
         SET product_name = lower(trim(p_new_value))
-        WHERE product_id = p_product_id;
-
-    ELSIF lower(trim(p_column_name)) = 'brand' THEN
-        UPDATE household_appliances_store.product
-        SET brand = lower(trim(p_new_value))
-        WHERE product_id = p_product_id;
-
-    ELSIF lower(trim(p_column_name)) = 'model' THEN
-        UPDATE household_appliances_store.product
-        SET model = lower(trim(p_new_value))
         WHERE product_id = p_product_id;
 
     ELSIF lower(trim(p_column_name)) = 'unit_price' THEN
@@ -579,14 +752,14 @@ BEGIN
         SET stock_quantity = p_new_value::INTEGER
         WHERE product_id = p_product_id;
 
-    ELSIF lower(trim(p_column_name)) = 'warranty_months' THEN
+    ELSIF lower(trim(p_column_name)) = 'product_display_name' THEN
         UPDATE household_appliances_store.product
-        SET warranty_months = p_new_value::INTEGER
+        SET product_display_name = lower(trim(p_new_value))
         WHERE product_id = p_product_id;
 
     ELSIF lower(trim(p_column_name)) = 'created_at' THEN
         UPDATE household_appliances_store.product
-        SET created_at = p_new_value::DATE
+        SET created_at = p_new_value::TIMESTAMP
         WHERE product_id = p_product_id;
     END IF;
 
@@ -598,21 +771,22 @@ BEGIN
 END;
 $$;
 
-
-
 -- =========================================================
 -- 7. FUNCTION 2
 -- I make a function that inserts a new sales transaction.
 -- I use natural keys so I do not need to pass surrogate keys manually.
 -- I insert one header row and one item row.
 -- I also decrease stock after the sale.
+-- CHANGED: brand name and model name are used together as the natural key
+-- for product model lookup.
 -- =========================================================
 
 CREATE OR REPLACE FUNCTION household_appliances_store.add_sales_transaction(
     p_transaction_number VARCHAR(30),
     p_customer_email VARCHAR(255),
     p_employee_email VARCHAR(255),
-    p_product_model VARCHAR(100),
+    p_brand_name VARCHAR(100), -- ADDED
+    p_model_name VARCHAR(100), -- CHANGED
     p_quantity INTEGER,
     p_transaction_date DATE DEFAULT CURRENT_DATE,
     p_transaction_status household_appliances_store.transaction_status_enum DEFAULT 'pending',
@@ -654,10 +828,15 @@ BEGIN
         v_product_id,
         v_unit_price
     FROM household_appliances_store.product
-    WHERE household_appliances_store.product.model = lower(trim(p_product_model));
+    INNER JOIN household_appliances_store.product_model
+        ON household_appliances_store.product_model.product_model_id = household_appliances_store.product.product_model_id
+    INNER JOIN household_appliances_store.brand
+        ON household_appliances_store.brand.brand_id = household_appliances_store.product_model.brand_id
+    WHERE household_appliances_store.brand.brand_name = lower(trim(p_brand_name))
+      AND household_appliances_store.product_model.model_name = lower(trim(p_model_name));
 
     IF v_product_id IS NULL THEN
-        RAISE EXCEPTION 'Product with model % was not found.', p_product_model;
+        RAISE EXCEPTION 'Product with brand % and model % was not found.', p_brand_name, p_model_name;
     END IF;
 
     IF p_quantity <= 0 THEN
@@ -677,7 +856,7 @@ BEGIN
         FROM household_appliances_store.product
         WHERE household_appliances_store.product.product_id = v_product_id
     ) < p_quantity THEN
-        RAISE EXCEPTION 'Not enough stock for model %.', p_product_model;
+        RAISE EXCEPTION 'Not enough stock for brand % and model %.', p_brand_name, p_model_name;
     END IF;
 
     INSERT INTO household_appliances_store.sales_transaction (
@@ -720,12 +899,12 @@ BEGIN
 END;
 $$;
 
-
 -- =========================================================
 -- 8. VIEW
 -- I make one analytics view for the most recent quarter in the data.
 -- I exclude surrogate keys from the result.
 -- I group the data so I do not get duplicates.
+-- CHANGED: brand and model are now selected from normalized tables.
 -- =========================================================
 
 CREATE OR REPLACE VIEW household_appliances_store.vw_latest_quarter_sales_analytics AS
@@ -749,8 +928,8 @@ SELECT
     to_char(quarter_transactions.transaction_date, 'YYYY-MM') AS transaction_month,
     household_appliances_store.category.category_name,
     household_appliances_store.product.product_name,
-    household_appliances_store.product.brand,
-    household_appliances_store.product.model,
+    household_appliances_store.brand.brand_name,
+    household_appliances_store.product_model.model_name,
     SUM(household_appliances_store.sales_transaction_item.quantity) AS total_units_sold,
     SUM(household_appliances_store.sales_transaction_item.line_total) AS total_revenue,
     COUNT(DISTINCT quarter_transactions.transaction_number) AS total_transactions
@@ -761,6 +940,10 @@ INNER JOIN household_appliances_store.sales_transaction_item
     ON household_appliances_store.sales_transaction_item.sales_transaction_id = quarter_transactions.sales_transaction_id
 INNER JOIN household_appliances_store.product
     ON household_appliances_store.product.product_id = household_appliances_store.sales_transaction_item.product_id
+INNER JOIN household_appliances_store.product_model
+    ON household_appliances_store.product_model.product_model_id = household_appliances_store.product.product_model_id
+INNER JOIN household_appliances_store.brand
+    ON household_appliances_store.brand.brand_id = household_appliances_store.product_model.brand_id
 INNER JOIN household_appliances_store.category
     ON household_appliances_store.category.category_id = household_appliances_store.product.category_id
 GROUP BY
@@ -768,8 +951,8 @@ GROUP BY
     to_char(quarter_transactions.transaction_date, 'YYYY-MM'),
     household_appliances_store.category.category_name,
     household_appliances_store.product.product_name,
-    household_appliances_store.product.brand,
-    household_appliances_store.product.model
+    household_appliances_store.brand.brand_name,
+    household_appliances_store.product_model.model_name
 ORDER BY
     transaction_month,
     category_name,
@@ -807,6 +990,3 @@ GRANT SELECT ON ALL TABLES IN SCHEMA household_appliances_store TO manager_reado
 
 ALTER DEFAULT PRIVILEGES IN SCHEMA household_appliances_store
 GRANT SELECT ON TABLES TO manager_readonly;
-
-
-
