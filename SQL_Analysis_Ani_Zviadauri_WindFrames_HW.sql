@@ -7,11 +7,18 @@
 -- I include year 1998 only to calculate previous period for 1999.
 -- Without this, LAG would return NULL for 1999.
 
+-- UPDATE:
+-- I include 1998 only for calculation because 1999 needs previous-period values.
+-- If I start the calculation from 1999, then the previous-period column for 1999 becomes NULL.
+-- The final report still shows only 1999, 2000, and 2001, as required in the instructions.
+-- I use ID columns in window partitions because IDs are unique and safer than text columns.
 
 WITH channel_sales AS (
     SELECT
+        countries.country_region_id,
         countries.country_region,
         times.calendar_year,
+        channels.channel_id,
         channels.channel_desc,
         SUM(sales.amount_sold) AS amount_sold
     FROM sh.sales AS sales
@@ -24,24 +31,29 @@ WITH channel_sales AS (
     INNER JOIN sh.countries AS countries
         ON customers.country_id = countries.country_id
     WHERE times.calendar_year BETWEEN 1998 AND 2001
-        -- I include 1998 only so I can calculate previous period values for 1999.
+    -- I include 1998 only so I can calculate previous period values for 1999.
         AND UPPER(countries.country_region) IN ('AMERICAS', 'ASIA', 'EUROPE')
     GROUP BY
+        countries.country_region_id,
         countries.country_region,
         times.calendar_year,
+        channels.channel_id,
         channels.channel_desc
 ),
 channel_percentages AS (
     SELECT
+        channel_sales.country_region_id,
         channel_sales.country_region,
         channel_sales.calendar_year,
+        channel_sales.channel_id,
         channel_sales.channel_desc,
         channel_sales.amount_sold,
-        -- I calculate the percent of each channel inside the same region and year.
         ROUND(
             channel_sales.amount_sold
             / SUM(channel_sales.amount_sold) OVER (
-                PARTITION BY channel_sales.country_region, channel_sales.calendar_year
+                PARTITION BY
+                    channel_sales.country_region_id,
+                    channel_sales.calendar_year
             ) * 100,
             2
         ) AS pct_by_channels
@@ -54,9 +66,10 @@ previous_year_comparison AS (
         channel_percentages.channel_desc,
         channel_percentages.amount_sold,
         channel_percentages.pct_by_channels,
-        -- I compare each channel with the same channel from the previous year.
         LAG(channel_percentages.pct_by_channels) OVER (
-            PARTITION BY channel_percentages.country_region, channel_percentages.channel_desc
+            PARTITION BY
+                channel_percentages.country_region_id,
+                channel_percentages.channel_id
             ORDER BY channel_percentages.calendar_year
         ) AS pct_previous_period
     FROM channel_percentages
@@ -65,11 +78,14 @@ SELECT
     previous_year_comparison.country_region,
     previous_year_comparison.calendar_year,
     previous_year_comparison.channel_desc,
-    previous_year_comparison.amount_sold,
-    previous_year_comparison.pct_by_channels AS "% BY CHANNELS",
-    previous_year_comparison.pct_previous_period AS "% PREVIOUS PERIOD",
-    previous_year_comparison.pct_by_channels
-        - previous_year_comparison.pct_previous_period AS "% DIFF"
+    TO_CHAR(previous_year_comparison.amount_sold, 'FM999G999G999G990') || ' $' AS amount_sold,
+    TO_CHAR(previous_year_comparison.pct_by_channels, 'FM990D00') || ' %' AS "% BY CHANNELS",
+    TO_CHAR(previous_year_comparison.pct_previous_period, 'FM990D00') || ' %' AS "% PREVIOUS PERIOD",
+    TO_CHAR(
+        previous_year_comparison.pct_by_channels
+            - previous_year_comparison.pct_previous_period,
+        'FM990D00'
+    ) || ' %' AS "% DIFF"
 FROM previous_year_comparison
 WHERE previous_year_comparison.calendar_year BETWEEN 1999 AND 2001
 ORDER BY
